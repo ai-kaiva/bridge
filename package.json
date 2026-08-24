@@ -1,0 +1,33 @@
+{
+  "name": "@kaiva/bridge",
+  "version": "0.1.4",
+  "description": "Kaiva Bridge CLI — publish any API as a live MCP server from your terminal.",
+  "author": "Kaiva (https://kaiv.ai)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ai-kaiva/bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ai-kaiva/bridge/issues"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "bin": {
+    "kaiva-bridge": "bin/kaiva-bridge.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "agents",
+    "kaiva",
+    "bridge"
+  ],
+  "homepage": "https://kaiv.ai/bridge"
+}
