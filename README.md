@@ -46,6 +46,11 @@ Paste the endpoint + key into Claude, Cursor, or any MCP client. Done.
 | `servers` | List servers with state and source |
 | `publish <server-id>` | Publish a draft server |
 | `key <server-id> [--label L]` | Mint a server-scoped gateway key (shown once) |
+| `introspect <server-id>` | Re-read the source. Exits 3 if a contract change was held |
+| `revisions <server-id>` | Contract history: when it changed and which tool |
+| `promote <server-id>` | Publish the held change |
+| `reject <server-id>` | Discard it and restore what is being served |
+| `auto-publish <server-id> [--off]` | Publish contract changes without review |
 | `invoke <server-id> <tool-id> [--args '{"k":"v"}']` | Test-call a tool through the real governed path (audited) |
 | `logs [--limit 50]` | Tail the audit log |
 | `metrics [--range 24h]` | Workspace KPIs (1h · 24h · 7d · 30d) |
@@ -60,4 +65,4 @@ Call a live example server from your browser — no account:
 
 ---
 
-MIT © SLATEAI LIMITED t/a Kaiva · [kaiv.ai/bridge](https://kaiv.ai/bridge)
+MIT © SLATEAI LIMITED · [kaiv.ai/bridge](https://kaiv.ai/bridge)

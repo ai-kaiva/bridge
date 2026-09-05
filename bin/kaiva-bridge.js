@@ -33,6 +33,11 @@ USAGE
   kaiva-bridge publish <server-id>                   publish a draft server
   kaiva-bridge key <server-id> [--label L]           mint a gateway key for one server
   kaiva-bridge invoke <server-id> <tool> [--args '{"k":"v"}']      test-call a tool (name or id)
+  kaiva-bridge introspect <server-id>                re-read the source; reports anything held
+  kaiva-bridge revisions <server-id>                 contract history for a server
+  kaiva-bridge promote <server-id>                   publish the held change
+  kaiva-bridge reject <server-id>                    discard it and restore what is served
+  kaiva-bridge auto-publish <server-id> [--off]      publish contract changes without review
   kaiva-bridge logs [--limit 50]                     tail the audit log
   kaiva-bridge metrics [--range 24h]                 workspace metrics (1h|24h|7d|30d)
 
@@ -174,6 +179,75 @@ async function main() {
   if (cmd === 'metrics') {
     const r = await api('GET', `/metrics?range=${flag(args, 'range') || '24h'}`);
     say(JSON.stringify(r.kpis, null, 2));
+    return;
+  }
+
+  /* ── Contract revisions ──────────────────────────────────────────────────
+     A changed description or input schema on a tool that is already exposed does
+     not go live on its own: it is held until someone releases it. An MCP client
+     reads tool definitions once, when a person approves the connection, so a
+     rewrite reaching agents unannounced is the thing being prevented.
+
+     None of these takes a revision id. At most one revision is ever pending per
+     server, so the command finds it. */
+  if (cmd === 'introspect') {
+    if (!args[0]) fail('introspect needs a server id — run: kaiva-bridge servers');
+    const r = await api('POST', `/servers/${args[0]}/introspect`);
+    const c = r.changes || {};
+    /* The two APIs answer introspect with different envelopes: the console router
+       wraps it as { server, changes } and the Management router returns the server
+       fields flat alongside changes. This CLI only ever talks to the Management
+       API, so r.pending is the real path; r.server.pending is read too so the
+       command cannot silently report success against the other shape. */
+    const held = (r.pending || r.server?.pending)?.changes?.exposedAndChanged || [];
+    if (held.length) {
+      say(`held: ${held.join(', ')} changed meaning and is NOT being served yet.`);
+      say(`agents still receive the previous definitions. release with: kaiva-bridge promote ${args[0]}`);
+      /* Non-zero so an unattended pipeline stops instead of reporting success on
+         a server whose new tools are not live. Distinct from 1, which the rest of
+         this CLI uses for an outright failure: nothing went wrong here, it is
+         waiting for a person. */
+      process.exitCode = 3;
+      return;
+    }
+    const bits = [];
+    if (c.added?.length) bits.push(`${c.added.length} new (left off)`);
+    if (c.removed?.length) bits.push(`${c.removed.length} gone`);
+    if (c.keptExposed) bits.push(`${c.keptExposed} still exposed`);
+    say(bits.length ? bits.join(' · ') : 'no change to the tool set');
+    return;
+  }
+
+  if (cmd === 'revisions') {
+    if (!args[0]) fail('revisions needs a server id');
+    const r = await api('GET', `/servers/${args[0]}/revisions`);
+    if (!r.revisions?.length) { say('no contract history yet'); return; }
+    for (const v of r.revisions) {
+      const ch = v.changes?.exposedAndChanged || [];
+      say(`${v.created_at}  ${String(v.status).padEnd(11)} ${v.digest.slice(0, 16)}  ${ch.length ? `changed: ${ch.join(', ')}` : ''}`.trimEnd());
+    }
+    return;
+  }
+
+  if (cmd === 'promote' || cmd === 'reject') {
+    if (!args[0]) fail(`${cmd} needs a server id`);
+    const list = await api('GET', `/servers/${args[0]}/revisions`);
+    const pending = (list.revisions || []).find((v) => v.status === 'pending');
+    if (!pending) fail('nothing is held on that server');
+    const r = await api('POST', `/servers/${args[0]}/revisions/${pending.id}/${cmd}`);
+    say(cmd === 'promote'
+      ? 'published — connected agents now receive the new definitions'
+      : `rejected — ${r.restored || 0} tools restored to what is being served`);
+    return;
+  }
+
+  if (cmd === 'auto-publish') {
+    if (!args[0]) fail('auto-publish needs a server id');
+    const enabled = !args.includes('--off');
+    const r = await api('POST', `/servers/${args[0]}/auto-promote`, { enabled });
+    say(r.autoPromote
+      ? 'auto-publish ON — contract changes go live as soon as they are introspected'
+      : 'auto-publish OFF — a changed description or schema waits for review');
     return;
   }
 
