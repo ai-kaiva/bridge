@@ -38,6 +38,12 @@ USAGE
   kaiva-bridge promote <server-id>                   publish the held change
   kaiva-bridge reject <server-id>                    discard it and restore what is served
   kaiva-bridge auto-publish <server-id> [--off]      publish contract changes without review
+  kaiva-bridge credential set <server-id> --type bearer --secret-stdin    replace the credential it sends upstream
+  kaiva-bridge credential set <server-id> --type basic --username U --secret-stdin
+  kaiva-bridge credential set <server-id> --type header --name X-API-Key --secret-stdin
+      --secret-stdin reads the token, password or value from stdin: printf %s "$KEY" | kaiva-bridge …
+      (--token, --password and --value also work, but leave the secret in shell history)
+  kaiva-bridge credential test <server-id>           call the API once with the stored credential
   kaiva-bridge logs [--limit 50]                     tail the audit log
   kaiva-bridge metrics [--range 24h]                 workspace metrics (1h|24h|7d|30d)
 
@@ -249,6 +255,61 @@ async function main() {
       ? 'auto-publish ON — contract changes go live as soon as they are introspected'
       : 'auto-publish OFF — a changed description or schema waits for review');
     return;
+  }
+
+  /* credential — set the credential a server sends upstream, and test it.
+
+     Here because the console was the only place to do either. A team creating
+     servers from CI could set a credential at creation and never again, so when an
+     API started refusing it their only route back was a browser. In production that
+     meant days of 401s with nothing saying which of the two was wrong: the value,
+     or the KIND. */
+  if (cmd === 'credential') {
+    const sub = args[0];
+    const server = args[1];
+    if (sub === 'test') {
+      if (!server) fail('usage: kaiva-bridge credential test <server-id>');
+      const r = await api('POST', `/servers/${server}/upstream-auth/test`);
+      say(`${r.ok ? 'OK' : 'FAILED'}  ${r.title}`);
+      if (r.message) say(`        ${r.message}`);
+      if (!r.ok && !r.inconclusive && !r.untestable) process.exitCode = 1;
+      return;
+    }
+    if (sub === 'set') {
+      if (!server) fail("usage: kaiva-bridge credential set <server-id> --type bearer --token …");
+      const type = (flag(args, 'type') || 'bearer').toLowerCase();
+      const secretFlag = { bearer: 'token', basic: 'password', header: 'value', query: 'value' }[type];
+      if (type !== 'none' && !secretFlag) fail(`unknown --type ${type}: use bearer, basic, header, query or none`);
+      /* A secret passed as an argument is readable by every other process on the
+         machine (ps) and is written to shell history. --secret-stdin is the same
+         pattern as `docker login --password-stdin`: the value never touches argv. */
+      let secret;
+      if (secretFlag && args.includes('--secret-stdin')) {
+        if (process.stdin.isTTY) fail('--secret-stdin reads from a pipe: printf %s "$KEY" | kaiva-bridge credential set …');
+        process.stdin.setEncoding('utf8');
+        let raw = '';
+        for await (const chunk of process.stdin) raw += chunk;
+        secret = raw.replace(/\r?\n$/, '');
+      } else if (secretFlag) {
+        secret = flag(args, secretFlag);
+        if (secret) process.stderr.write(`warning: --${secretFlag} leaves the secret in shell history and visible to other processes. Use --secret-stdin instead.\n`);
+      }
+      if (secretFlag && !secret) fail(`no ${secretFlag} given. Pipe it in with --secret-stdin, or pass --${secretFlag}`);
+      let auth = null;
+      if (type === 'bearer') auth = { type, token: secret };
+      else if (type === 'basic') auth = { type, username: flag(args, 'username'), password: secret };
+      else if (type === 'header' || type === 'query') auth = { type, name: flag(args, 'name'), value: secret };
+      const r = await api('PUT', `/servers/${server}/upstream-auth`, { auth });
+      say(auth ? `credential saved (${r.credential ? r.credential.label : type})` : 'credential removed');
+      // Saving proves nothing on its own, so the API is asked straight away. The
+      // same call the console makes when you press Save and test.
+      const t = await api('POST', `/servers/${server}/upstream-auth/test`);
+      say(`${t.ok ? 'OK' : 'FAILED'}  ${t.title}`);
+      if (t.message) say(`        ${t.message}`);
+      if (!t.ok && !t.inconclusive && !t.untestable) process.exitCode = 1;
+      return;
+    }
+    fail("usage: kaiva-bridge credential set|test <server-id> [--type bearer|basic|header|query|none] …");
   }
 
   fail(`unknown command '${cmd}' — run: kaiva-bridge help`);
