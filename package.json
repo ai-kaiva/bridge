@@ -1,6 +1,6 @@
 {
   "name": "@kaiva/bridge",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Kaiva Bridge CLI \u2014 publish any API as a live MCP server from your terminal.",
   "license": "MIT",
   "type": "module",
