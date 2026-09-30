@@ -1,0 +1,124 @@
+---
+name: kaiva-bridge
+description: Connect an API (OpenAPI spec), a database (Postgres, MySQL or MariaDB) or a remote MCP server to this coding agent or to an AI app through Kaiva Bridge, as a hosted MCP server. Use when the user wants their AI tools or app to use an API or database, asks to "connect my database/API to Claude/Cursor/Codex", or mentions Kaiva Bridge.
+---
+
+# Kaiva Bridge setup
+
+Kaiva Bridge turns an API spec, a database or a remote MCP server into a hosted MCP
+endpoint with read-only database tools. You drive it with the `kaiva-bridge` CLI
+(`npx @kaiva/bridge`). Every step below is safe to run again: the same server name is
+reused, never duplicated, and `--replace` keeps one key per client.
+
+## Before you start
+
+1. Check `KAIVA_BRIDGE_TOKEN` is set (`test -n "$KAIVA_BRIDGE_TOKEN"`). If not, ask the user
+   to create a **Management key** at https://app.kaiv.ai (Keys & access → Issue a key →
+   Management) and export it in their shell. Never ask them to paste it into the chat, and
+   never print it.
+2. Work out the source with the user:
+   - an OpenAPI spec URL (`--openapi <url>`),
+   - a database connection string, already in an environment variable such as
+     `DATABASE_URL` (`--postgres` for postgres:// and postgresql://, `--mysql` for mysql://
+     and mariadb://),
+   - or a remote MCP server URL (`--mcp <url>`).
+3. Pick a short server name (lowercase, hyphens), e.g. `shop-db`.
+
+## 1. Create or update the server
+
+Database (the connection string never appears in the command line or your output):
+
+```bash
+printf %s "$DATABASE_URL" | npx -y @kaiva/bridge push shop-db --mysql --secret-stdin --read-only --json
+```
+
+API spec:
+
+```bash
+npx -y @kaiva/bridge push petstore --openapi https://example.com/openapi.json --read-only --json
+```
+
+Always pass `--read-only`: only operations that read are exposed (every database tool
+is a read; for an API, GET). Operations that change data stay off. If the user wants
+some of them, list them (`npx @kaiva/bridge tools <id>`) and let the user choose them in
+the console (Servers → the server → Tools); never expose writes on your own.
+
+The last line of output is one JSON object: `id`, `endpoint`, `slug`, `tools`, `exposed`,
+`writesLeftOff`, `reused`, `held`. Keep `id`, `endpoint` and `slug`.
+
+Handle the outcome:
+
+- **Exit 0:** the server is live.
+- **Exit 3:** a tool changed meaning and is held for review (`held` lists it). Tell the
+  user; they release it with `npx @kaiva/bridge promote <id>`. Agents keep the previous
+  definitions until then.
+- **Certificate stop** (the error says Bridge couldn't verify the database's certificate):
+  ask the user which they want. Do not choose for them.
+  - `--ca-file <provider-ca.pem>`: checked against their provider's CA (preferred; most
+    hosted providers publish one).
+  - `--no-verify-tls`: connect without checking the certificate (still encrypted).
+  Then run the same push again with that flag; it reuses the server.
+- **Any other error:** show the message to the user as it is. It names what to fix (login,
+  database name, host, port, the wrong kind of database). Do not retry with changed
+  details unless the user gives them.
+
+## 2. Make a key for this client
+
+```bash
+npx -y @kaiva/bridge key <id> --label claude-code --replace --json
+```
+
+Use one label per client (`claude-code`, `cursor`, `codex`, `my-app`). `--replace` revokes
+the earlier key with that label for this server, so running setup again leaves one key.
+The key is shown once: put it straight into the client configuration below. Do not echo
+it in your reply or write it anywhere else.
+
+## 3. Add it to the client
+
+Claude Code:
+
+```bash
+claude mcp remove <slug> >/dev/null 2>&1 || true
+claude mcp add --transport http <slug> <endpoint> --header "Authorization: Bearer <key>"
+```
+
+Cursor (`.cursor/mcp.json` in the project, or `~/.cursor/mcp.json` for all projects): add
+under `mcpServers`, keeping any existing entries:
+
+```json
+{ "mcpServers": { "<slug>": { "url": "<endpoint>", "headers": { "Authorization": "Bearer <key>" } } } }
+```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.<slug>]
+url = "<endpoint>"
+http_headers = { "Authorization" = "Bearer <key>" }
+```
+
+VS Code (`.vscode/mcp.json`):
+
+```json
+{ "servers": { "<slug>": { "type": "http", "url": "<endpoint>", "headers": { "Authorization": "Bearer <key>" } } } }
+```
+
+A key in a project file must not be committed: check the file is in `.gitignore`, and add
+it if the user agrees.
+
+## 4. Confirm it works
+
+```bash
+npx -y @kaiva/bridge tools <id>
+npx -y @kaiva/bridge invoke <id> <tool-name> --args '{}'
+```
+
+Pick a read tool with no required inputs (for a database, `get_<table>` with no filters).
+Report to the user: the endpoint, how many tools are exposed, and the result of that first
+call. A new client may need restarting before it lists the tools.
+
+## Running it again
+
+Safe. `push` with the same name updates that server from its source and keeps the tools
+someone chose; `key --replace` swaps the key. To expose more tools on a live server, ask
+the user first, then use the console (Servers → the server → Tools).

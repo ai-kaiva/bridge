@@ -25,13 +25,19 @@ const TOKEN = process.env.KAIVA_BRIDGE_TOKEN || '';
 const HELP = `kaiva-bridge — publish any API as a live, governed MCP server
 
 USAGE
-  kaiva-bridge push <name> --openapi <spec-url>      create + introspect + expose all + publish
+  kaiva-bridge push <name> --openapi <spec-url>      create + introspect + expose all + publish (same name again: reused, not duplicated)
+      add --read-only to expose only operations that read (writes stay off until you choose them)
   kaiva-bridge push <name> --mcp <server-url>        wrap an existing remote MCP server
   kaiva-bridge push <name> --postgres <conn-string>  read-only tools from a Postgres DB
+  kaiva-bridge push <name> --mysql <conn-string>     read-only tools from a MySQL or MariaDB DB
+      add --secret-stdin to read the connection string (or, for --openapi/--mcp, the
+      --token) from stdin: printf %s "$DATABASE_URL" | kaiva-bridge push db --postgres --secret-stdin
+      a database whose certificate is self-signed: add --ca-file <provider-ca.pem>, or --no-verify-tls
+  kaiva-bridge skill install [--project]            add the setup skill for coding agents (Claude Code)
   kaiva-bridge servers                               list servers
   kaiva-bridge tools <server-id>                     list a server's tools (id, name, required args)
   kaiva-bridge publish <server-id>                   publish a draft server
-  kaiva-bridge key <server-id> [--label L]           mint a gateway key for one server
+  kaiva-bridge key <server-id> [--label L] [--replace]  gateway key for agents; --replace revokes the earlier one with that label
   kaiva-bridge invoke <server-id> <tool> [--args '{"k":"v"}']      test-call a tool (name or id)
   kaiva-bridge introspect <server-id>                re-read the source; reports anything held
   kaiva-bridge revisions <server-id>                 contract history for a server
@@ -47,6 +53,9 @@ USAGE
   kaiva-bridge logs [--limit 50]                     tail the audit log
   kaiva-bridge metrics [--range 24h]                 workspace metrics (1h|24h|7d|30d)
 
+OUTPUT
+  --json    progress to stderr, one JSON result on stdout (push, key)
+
 AUTH
   export KAIVA_BRIDGE_TOKEN=kv_mgmt_...   (console -> Access -> New key -> Management)
   export KAIVA_BRIDGE_URL=...             (optional; defaults to https://api.kaiv.ai/api/bridge/v1)
@@ -54,13 +63,32 @@ AUTH
 
 // Progress goes to stdout, errors to stderr — but stdout is buffered when piped,
 // so flush it before exiting or the error prints ahead of the progress lines.
-function say(msg) { process.stdout.write(`${msg}\n`); }
+// Tool names, server names and error text come from the server and from the APIs
+// it wraps, so they reach the terminal only as plain text: control characters
+// (escape sequences that move the cursor, rewrite lines or retitle the window)
+// and bidi overrides become '?'. Newlines and tabs are kept for layout.
+const plain = (s) => String(s).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '?');
+/* --json: for coding agents and scripts. Progress goes to stderr and the command
+   ends with exactly one JSON object on stdout, so the result can be parsed. */
+const JSON_MODE = process.argv.includes('--json');
+function say(msg) { (JSON_MODE ? process.stderr : process.stdout).write(`${plain(msg)}\n`); }
+function out(obj) { if (JSON_MODE) process.stdout.write(`${JSON.stringify(obj)}\n`); }
 function fail(msg) {
-  process.stderr.write(`error: ${msg}\n`);
+  process.stderr.write(`error: ${plain(msg)}\n`);
   process.exitCode = 1;
   process.exit(1);
 }
 function flag(args, name) { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : undefined; }
+/* A secret passed as an argument is readable by every other process on the
+   machine (ps) and is written to shell history. --secret-stdin is the same
+   pattern as `docker login --password-stdin`: the value never touches argv. */
+async function readSecretStdin() {
+  if (process.stdin.isTTY) fail('--secret-stdin reads from a pipe: printf %s "$SECRET" | kaiva-bridge …');
+  process.stdin.setEncoding('utf8');
+  let raw = '';
+  for await (const chunk of process.stdin) raw += chunk;
+  return raw.replace(/\r?\n$/, '');
+}
 
 async function api(method, path, body) {
   if (!TOKEN) fail('KAIVA_BRIDGE_TOKEN is not set (mint a Management key in the console: Access → New key → Management).');
@@ -71,7 +99,10 @@ async function api(method, path, body) {
   });
   let data = null;
   try { data = await res.json(); } catch { /* empty */ }
-  if (!res.ok) fail(`${res.status} ${data?.error || ''}${data?.message ? ` — ${data.message}` : ''}`);
+  /* A database whose certificate could not be checked: say how to go on from the
+     command line, as the console's certificate panel does. */
+  const tlsHint = data?.tls ? '\nadd --ca-file <provider-ca.pem> to check it against your provider\'s CA, or --no-verify-tls to connect without checking the certificate' : '';
+  if (!res.ok) fail(`${res.status} ${data?.error || ''}${data?.message ? ` — ${data.message}` : ''}${tlsHint}`);
   return data;
 }
 
@@ -83,31 +114,94 @@ const redactConn = (conn) => String(conn).replace(/\/\/([^:/@]+):[^@]*@/, '//$1:
 async function push(args) {
   const name = args[0];
   if (!name || name.startsWith('--')) fail('usage: kaiva-bridge push <name> --openapi <url> | --mcp <url> | --postgres <conn>');
-  const src = flag(args, 'openapi') ? ['openapi', flag(args, 'openapi')]
-    : flag(args, 'mcp') ? ['mcp', flag(args, 'mcp')]
-    : flag(args, 'postgres') ? ['postgres', flag(args, 'postgres')]
-    : null;
-  if (!src) fail('one of --openapi <url>, --mcp <url>, --postgres <conn-string> is required');
-  const [sourceType, rawUrl] = src;
-  const auth = sourceType === 'postgres' ? { connectionString: rawUrl }
-    : flag(args, 'token') ? { type: 'bearer', token: flag(args, 'token') } : undefined;
-  // A Postgres connection string carries the password. It travels ONLY inside
-  // `auth` (sealed at rest server-side); source_url gets a redacted form, since
-  // that column is echoed back by list/detail endpoints and shown in the console.
-  const sourceUrl = sourceType === 'postgres' ? redactConn(rawUrl) : rawUrl;
+  // A flag's value, unless the next word is another flag (--postgres --secret-stdin).
+  const val = (n) => { const v = flag(args, n); return v && !v.startsWith('--') ? v : undefined; };
+  const sourceType = ['openapi', 'mcp', 'postgres', 'mysql'].find((t) => args.includes(`--${t}`));
+  if (!sourceType) fail('one of --openapi <url>, --mcp <url>, --postgres <conn-string>, --mysql <conn-string> is required');
+  // A database source's connection string is its credential (Postgres or MySQL).
+  const isDb = sourceType === 'postgres' || sourceType === 'mysql';
+  let rawUrl = val(sourceType);
+  let token = val('token');
+  /* The connection string carries the database password and --token is an API
+     credential, so both can come from stdin instead of argv (the same
+     --secret-stdin as credential set): the connection string for a database,
+     the bearer token otherwise. */
+  if (args.includes('--secret-stdin')) {
+    if (isDb ? rawUrl : token) fail(`pass the ${isDb ? 'connection string' : 'token'} on stdin or as an argument, not both`);
+    const secret = await readSecretStdin();
+    if (isDb) rawUrl = secret; else token = secret;
+  } else if (isDb ? rawUrl : token) {
+    process.stderr.write(`warning: ${isDb ? `--${sourceType}` : '--token'} leaves the secret in shell history and visible to other processes. Use --secret-stdin instead.\n`);
+  }
+  if (!rawUrl) fail(`--${sourceType} needs a ${isDb ? 'connection string (or --secret-stdin)' : 'URL'}`);
+  const auth = isDb ? { connectionString: rawUrl }
+    : token ? { type: 'bearer', token } : undefined;
+  // A connection string carries the password. It travels ONLY inside `auth`
+  // (sealed at rest server-side); source_url gets a redacted form, since that
+  // column is echoed back by list/detail endpoints and shown in the console.
+  const sourceUrl = isDb ? redactConn(rawUrl) : rawUrl;
 
-  say(`creating ${name} (${sourceType})…`);
-  const created = await api('POST', '/servers', { name, sourceType, sourceUrl, auth });
-  const server = created.server || created;
-  say(`introspecting…`);
-  await api('POST', `/servers/${server.id}/introspect`);
+  /* Repeat-safe: a server with this name is reused, never duplicated, so a coding
+     agent (or a person) can run the same push again. It is read again from its
+     source; which tools are exposed is left as it is, since someone may have
+     chosen them. A name already used for a different kind of source stops here. */
+  const existing = ((await api('GET', '/servers')).servers || []).find((s) => s.name === name);
+  if (existing && existing.source_type !== sourceType) {
+    const kind = { openapi: 'an OpenAPI spec', postgres: 'a Postgres database', mysql: 'a MySQL or MariaDB database', mcp: 'a remote MCP server' }[existing.source_type] || 'another kind of source';
+    fail(`a server named "${name}" already exists for ${kind}. Use another name, or delete that server first.`);
+  }
+  let server = existing;
+  if (existing) {
+    say(`${name} already exists (${existing.id}), reading its source again…`);
+  } else {
+    say(`creating ${name} (${sourceType})…`);
+    const created = await api('POST', '/servers', { name, sourceType, sourceUrl, auth });
+    server = created.server || created;
+    say(`introspecting…`);
+  }
+  /* Certificate choice for a database source, the same two the console offers:
+     verify against the provider's CA, or connect without checking (explicit). */
+  const caFile = val('ca-file');
+  if (caFile) {
+    const { readFileSync } = await import('node:fs');
+    let caPem;
+    try { caPem = readFileSync(caFile, 'utf8'); } catch { fail(`cannot read --ca-file ${caFile}`); }
+    await api('PATCH', `/servers/${server.id}/tls`, { mode: 'verify', caPem });
+    say('certificate will be checked against the CA you gave');
+  } else if (args.includes('--no-verify-tls')) {
+    await api('PATCH', `/servers/${server.id}/tls`, { mode: 'skip', acknowledge: true });
+    say('warning: connecting without checking the database certificate (the connection is still encrypted)');
+  }
+  const intro = await api('POST', `/servers/${server.id}/introspect`);
+  const held = (intro?.pending || intro?.server?.pending)?.changes?.exposedAndChanged || [];
   const detail = await api('GET', `/servers/${server.id}`);
   const tools = detail.server?.tools || detail.tools || [];
-  say(`exposing ${tools.length} tool${tools.length === 1 ? '' : 's'}…`);
-  for (const t of tools) await api('PATCH', `/servers/${server.id}/tools/${t.id}`, { exposed: true });
-  await api('POST', `/servers/${server.id}/publish`);
-  say(`\nLIVE  ${gatewayUrl(server.slug)}`);
-  say(`\nnext: kaiva-bridge key ${server.id}   (mint a gateway key for agents)`);
+  /* Exposure is chosen here only for a server that has never gone live (new, or an
+     earlier push that stopped at the certificate step); a live server keeps the
+     tools someone chose. */
+  const neverLive = !existing || existing.state !== 'live';
+  /* --read-only exposes only operations that read (GET and HEAD from an API spec;
+     every database tool is a read). Writes stay off until someone chooses them, which
+     is what a coding agent should do by default. Without the flag, all are exposed as
+     before. */
+  const READS = new Set(['GET', 'HEAD', 'SELECT']);
+  const toExpose = args.includes('--read-only') ? tools.filter((t) => READS.has(String(t.method || '').toUpperCase())) : tools;
+  const leftOff = tools.length - toExpose.length;
+  if (neverLive) {
+    say(`exposing ${toExpose.length} tool${toExpose.length === 1 ? '' : 's'}${leftOff ? ` (${leftOff} that write left off)` : ''}…`);
+    for (const t of toExpose) await api('PATCH', `/servers/${server.id}/tools/${t.id}`, { exposed: true });
+  }
+  const state = detail.server?.state || detail.state;
+  if (state !== 'live') await api('POST', `/servers/${server.id}/publish`);
+  const endpoint = gatewayUrl(server.slug);
+  const exposed = neverLive ? toExpose.length : tools.filter((t) => t.exposed).length;
+  say(`\nLIVE  ${endpoint}`);
+  if (held.length) {
+    say(`held: ${held.join(', ')} changed meaning and is NOT being served yet. release with: kaiva-bridge promote ${server.id}`);
+    process.exitCode = 3;
+  }
+  say(`\nnext: kaiva-bridge key ${server.id} --label <client> --replace   (a gateway key for your agent)`);
+  out({ id: server.id, name, slug: server.slug, endpoint, sourceType, reused: !!existing, tools: tools.length, exposed, writesLeftOff: neverLive ? leftOff : 0, held });
 }
 
 // GET /servers/:id returns the server with its tools. The management route passes
@@ -123,6 +217,23 @@ async function main() {
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') { say(HELP); return; }
 
   if (cmd === 'push') return push(args);
+
+  /* The setup skill for coding agents ships inside this package. Installing it
+     copies SKILL.md into Claude Code's skills folder (the user's, or this project's
+     with --project); running it again overwrites, so it is safe to repeat. */
+  if (cmd === 'skill') {
+    if (args[0] !== 'install') fail('usage: kaiva-bridge skill install [--project]');
+    const { readFileSync, mkdirSync, writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { homedir } = await import('node:os');
+    const body = readFileSync(new URL('../skills/kaiva-bridge/SKILL.md', import.meta.url), 'utf8');
+    const dir = join(args.includes('--project') ? process.cwd() : homedir(), '.claude', 'skills', 'kaiva-bridge');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'SKILL.md'), body);
+    say(`installed the Kaiva Bridge skill: ${join(dir, 'SKILL.md')}`);
+    say('ask your coding agent: "connect my database to Claude Code with Kaiva Bridge"');
+    return;
+  }
 
   if (cmd === 'servers') {
     const r = await api('GET', '/servers');
@@ -150,9 +261,29 @@ async function main() {
   }
 
   if (cmd === 'key') {
-    if (!args[0]) fail('usage: kaiva-bridge key <server-id> [--label L]');
-    const r = await api('POST', '/keys', { label: flag(args, 'label') || 'cli-key', serverIds: [args[0]] });
-    say(`key (shown once): ${r.key.key || r.key.raw || JSON.stringify(r.key)}`);
+    if (!args[0]) fail('usage: kaiva-bridge key <server-id> [--label L] [--replace]');
+    const label = flag(args, 'label') || 'cli-key';
+    /* --replace keeps one key per label per server: an earlier key with this label
+       for this server is revoked before the new one is made, so running setup
+       again does not leave old keys behind. Only keys scoped to exactly this one
+       server are touched. */
+    let replaced = 0;
+    if (args.includes('--replace')) {
+      const all = (await api('GET', '/keys')).keys || [];
+      for (const k of all) {
+        const ids = k.server_ids || [];
+        if (k.label === label && !k.revoked_at && ids.length === 1 && ids[0] === args[0]) {
+          await api('DELETE', `/keys/${k.id}`);
+          replaced += 1;
+        }
+      }
+      if (replaced) say(`revoked ${replaced} earlier key${replaced === 1 ? '' : 's'} labelled "${label}"`);
+    }
+    const r = await api('POST', '/keys', { label, serverIds: [args[0]] });
+    const raw = r.key.key || r.key.raw;
+    // With --json the key is only in the JSON result, never also printed to the terminal.
+    if (!JSON_MODE) say(`key (shown once): ${raw || JSON.stringify(r.key)}`);
+    out({ key: raw, id: r.key.id, label, serverId: args[0], replaced });
     return;
   }
 
@@ -280,16 +411,9 @@ async function main() {
       const type = (flag(args, 'type') || 'bearer').toLowerCase();
       const secretFlag = { bearer: 'token', basic: 'password', header: 'value', query: 'value' }[type];
       if (type !== 'none' && !secretFlag) fail(`unknown --type ${type}: use bearer, basic, header, query or none`);
-      /* A secret passed as an argument is readable by every other process on the
-         machine (ps) and is written to shell history. --secret-stdin is the same
-         pattern as `docker login --password-stdin`: the value never touches argv. */
       let secret;
       if (secretFlag && args.includes('--secret-stdin')) {
-        if (process.stdin.isTTY) fail('--secret-stdin reads from a pipe: printf %s "$KEY" | kaiva-bridge credential set …');
-        process.stdin.setEncoding('utf8');
-        let raw = '';
-        for await (const chunk of process.stdin) raw += chunk;
-        secret = raw.replace(/\r?\n$/, '');
+        secret = await readSecretStdin();
       } else if (secretFlag) {
         secret = flag(args, secretFlag);
         if (secret) process.stderr.write(`warning: --${secretFlag} leaves the secret in shell history and visible to other processes. Use --secret-stdin instead.\n`);
