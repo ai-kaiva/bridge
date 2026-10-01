@@ -30,6 +30,9 @@ USAGE
   kaiva-bridge push <name> --mcp <server-url>        wrap an existing remote MCP server
   kaiva-bridge push <name> --postgres <conn-string>  read-only tools from a Postgres DB
   kaiva-bridge push <name> --mysql <conn-string>     read-only tools from a MySQL or MariaDB DB
+  kaiva-bridge push <name> --docs <file|folder>...   PDF, Word, PNG, JPEG, text or Markdown files, searchable by your AI
+      waits until each file is read and the server is live; add --no-wait to return once they are sent
+      the same file name again replaces that document with the new version
       add --secret-stdin to read the connection string (or, for --openapi/--mcp, the
       --token) from stdin: printf %s "$DATABASE_URL" | kaiva-bridge push db --postgres --secret-stdin
       a database whose certificate is self-signed: add --ca-file <provider-ca.pem>, or --no-verify-tls
@@ -113,7 +116,8 @@ const redactConn = (conn) => String(conn).replace(/\/\/([^:/@]+):[^@]*@/, '//$1:
 
 async function push(args) {
   const name = args[0];
-  if (!name || name.startsWith('--')) fail('usage: kaiva-bridge push <name> --openapi <url> | --mcp <url> | --postgres <conn>');
+  if (!name || name.startsWith('--')) fail('usage: kaiva-bridge push <name> --openapi <url> | --mcp <url> | --postgres <conn> | --docs <files>');
+  if (args.includes('--docs')) return pushDocs(name, args);
   // A flag's value, unless the next word is another flag (--postgres --secret-stdin).
   const val = (n) => { const v = flag(args, n); return v && !v.startsWith('--') ? v : undefined; };
   const sourceType = ['openapi', 'mcp', 'postgres', 'mysql'].find((t) => args.includes(`--${t}`));
@@ -202,6 +206,99 @@ async function push(args) {
   }
   say(`\nnext: kaiva-bridge key ${server.id} --label <client> --replace   (a gateway key for your agent)`);
   out({ id: server.id, name, slug: server.slug, endpoint, sourceType, reused: !!existing, tools: tools.length, exposed, writesLeftOff: neverLive ? leftOff : 0, held });
+}
+
+/* Documents: a documents server, then each file sent one at a time (as the console
+   does), then, unless --no-wait, a wait until every file has been read. The server goes
+   live by itself with its first ready document. Repeat-safe like the other sources: the
+   same name reuses the server, and a file name already there becomes its new version. */
+const DOC_EXT = new Set(['.pdf', '.docx', '.png', '.jpg', '.jpeg', '.txt', '.md', '.markdown']);
+const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+async function pushDocs(name, args) {
+  const { readFileSync, statSync, readdirSync } = await import('node:fs');
+  const path = await import('node:path');
+  const given = [];
+  for (let j = args.indexOf('--docs') + 1; j < args.length && !args[j].startsWith('--'); j += 1) given.push(args[j]);
+  if (!given.length) fail('--docs needs one or more files or folders: kaiva-bridge push handbook --docs ./policies');
+  const files = [];
+  for (const g of given) {
+    let st;
+    try { st = statSync(g); } catch { fail(`cannot read ${g}`); }
+    if (st.isDirectory()) {
+      for (const f of readdirSync(g).sort()) {
+        const fp = path.join(g, f);
+        if (DOC_EXT.has(path.extname(f).toLowerCase()) && statSync(fp).isFile()) files.push(fp);
+      }
+    } else files.push(g);
+  }
+  if (!files.length) fail('no PDF, Word, PNG, JPEG, text or Markdown files found there');
+
+  const existing = ((await api('GET', '/servers')).servers || []).find((s) => s.name === name);
+  if (existing && existing.source_type !== 'documents') fail(`a server named "${name}" already exists for another kind of source. Use another name, or delete that server first.`);
+  let server = existing;
+  if (existing) say(`${name} already exists (${existing.id}), adding files…`);
+  else {
+    say(`creating ${name} (documents)…`);
+    server = (await api('POST', '/documents/servers', { name })).server;
+  }
+
+  const sent = [];
+  const refused = [];
+  for (const f of files) {
+    const base = path.basename(f);
+    for (let attempt = 0; ; attempt += 1) {
+      const form = new FormData();
+      form.append('file', new Blob([readFileSync(f)]), base);
+      const res = await fetch(`${BASE}/documents/servers/${server.id}/documents`, { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` }, body: form });
+      let data = null;
+      try { data = await res.json(); } catch { /* empty */ }
+      // Sent too fast: the console waits and tries again, and so does this.
+      if (res.status === 429 && attempt < 6) { say('  pausing a moment (upload rate)…'); await sleep(15000); continue; }
+      if (!res.ok) {
+        const error = data?.message || data?.error || `HTTP ${res.status}`;
+        refused.push({ file: base, error });
+        say(`  not accepted: ${base}: ${error}`);
+      } else {
+        sent.push({ file: base, id: data.document.id });
+        say(`  sent ${base}`);
+      }
+      break;
+    }
+  }
+
+  let docs = [];
+  if (sent.length && !args.includes('--no-wait')) {
+    say(`reading ${sent.length} file${sent.length === 1 ? '' : 's'}…`);
+    const ids = new Set(sent.map((x) => x.id));
+    const until = Date.now() + 30 * 60 * 1000;
+    const shown = new Map();
+    for (;;) {
+      docs = ((await api('GET', `/documents/servers/${server.id}`)).documents || []).filter((d) => ids.has(d.id));
+      for (const d of docs) {
+        const where = d.pending_version === null ? (d.state === 'failed' ? 'failed' : 'ready') : (/^\d+\/\d+$/.test(d.phase || '') ? `page ${d.phase.replace('/', ' of ')}` : (d.phase || 'queued'));
+        if (shown.get(d.id) !== where) { shown.set(d.id, where); say(`  ${d.name}: ${where}`); }
+      }
+      if (docs.length && docs.every((d) => d.pending_version === null)) break;
+      if (Date.now() > until) { say('still reading after 30 minutes; check the console for the rest'); break; }
+      await sleep(3000);
+    }
+  }
+
+  const detail = await api('GET', `/servers/${server.id}`);
+  const state = detail.server?.state || detail.state;
+  const endpoint = gatewayUrl(server.slug);
+  const failed = docs.filter((d) => d.state === 'failed');
+  if (state === 'live') say(`\nLIVE  ${endpoint}`);
+  else if (docs.some((d) => d.live_version > 0)) say(`\nready, but not live: your plan has no free server slot. Free one up, then: kaiva-bridge publish ${server.id}`);
+  else say(`\nthe server goes live at ${endpoint} once its first document is ready`);
+  for (const d of failed) say(`failed: ${d.name}: ${d.error || 'could not be read'}`);
+  if (state === 'live') say(`\nnext: kaiva-bridge key ${server.id} --label <client> --replace   (a gateway key for your agent)`);
+  if (refused.length || failed.length) process.exitCode = 1;
+  out({
+    id: server.id, name, slug: server.slug, endpoint, sourceType: 'documents', reused: !!existing, live: state === 'live',
+    documents: sent.map((x) => { const d = docs.find((y) => y.id === x.id); return { file: x.file, id: x.id, state: d ? (d.pending_version === null ? d.state : 'reading') : 'sent', pages: d ? d.pages : null, error: d?.error || null }; }),
+    refused,
+  });
 }
 
 // GET /servers/:id returns the server with its tools. The management route passes

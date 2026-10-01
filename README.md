@@ -37,6 +37,10 @@ npx @kaiva/bridge push my-api --openapi https://api.example.com/openapi.json --r
 printf %s "$DATABASE_URL" | npx @kaiva/bridge push shop-db --mysql --secret-stdin --read-only
 # → LIVE  https://api.kaiv.ai/api/bridge/mcp/shop-db-a1b2c3d4
 
+# Documents: PDF, Word, PNG, JPEG, text or Markdown files, or a folder of them
+npx @kaiva/bridge push handbook --docs ./policies
+# waits until each file is read, then → LIVE  https://api.kaiv.ai/api/bridge/mcp/handbook-a1b2c3d4
+
 npx @kaiva/bridge key <server-id> --label claude-code --replace   # a gateway key for your agent
 ```
 
@@ -70,6 +74,7 @@ Runnable scripts in [`examples/`](examples):
 | `push <name> --mcp <url>` | Wrap an existing remote MCP server with governance |
 | `push <name> --postgres <conn>` | Read-only tools from a Postgres database |
 | `push <name> --mysql <conn>` | Read-only tools from a MySQL or MariaDB database |
+| `push <name> --docs <files or folders>` | Documents your AI can search and read, page by page; the same file name again replaces that document. `--no-wait` returns once the files are sent |
 | `push … --read-only` | Expose only operations that read; writes stay off until you choose them |
 | `push … --ca-file <pem>` / `--no-verify-tls` | A database with a self-signed certificate: check it against your provider's CA, or connect without checking |
 | `skill install [--project]` | Add the setup skill for coding agents |
