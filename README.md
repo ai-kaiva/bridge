@@ -18,11 +18,25 @@ npx @kaiva/bridge help
 
 ## Auth
 
-Mint a **Management key** in the console (admin role required), then:
+```bash
+npx @kaiva/bridge login
+```
+
+The terminal shows a code and opens the console. Enter the code there and approve
+it (owner or admin of the workspace). The key is saved for this machine in
+`~/.config/kaiva-bridge/credentials.json`, readable only by you. `whoami` shows
+the workspace and key in use; `logout` revokes the key and removes it.
+
+For CI and scripts, use a **Management key** from the console (Keys & access,
+key type Management) instead. When set, it is used in place of a saved login:
 
 ```bash
 export KAIVA_BRIDGE_TOKEN=kv_mgmt_...
 ```
+
+`logout` revokes only a saved login. A key you supply in `KAIVA_BRIDGE_TOKEN` is
+yours to manage: unset it, and revoke it in the console when it is no longer
+needed. Signing in again revokes the login it replaces.
 
 Management keys are refused by the MCP gateway, and gateway keys are refused
 by the Management API: the two credential types are never interchangeable.
@@ -41,12 +55,17 @@ printf %s "$DATABASE_URL" | npx @kaiva/bridge push shop-db --mysql --secret-stdi
 npx @kaiva/bridge push handbook --docs ./policies
 # waits until each file is read, then → LIVE  https://api.kaiv.ai/api/bridge/mcp/handbook-a1b2c3d4
 
-npx @kaiva/bridge key <server-id> --label claude-code --replace   # a gateway key for your agent
+npx @kaiva/bridge install my-api --client claude-code   # or --client cursor
 ```
 
-Paste the endpoint and key into Claude, Cursor or any MCP client. Run the same
-commands again and nothing is duplicated: `push` reuses the server with that
-name, and `key --replace` swaps the key with that label.
+`install` adds the server to Claude Code (this folder's `.mcp.json`, or `--global`)
+or Cursor (`~/.cursor/mcp.json`, or `--project`), keeping every other entry. The
+client signs in with your Kaiva account the first time; `--key` writes a key for
+this one server instead. `--dry-run` shows the change; `uninstall` removes it.
+For any other MCP client, `key <server-id> --label <client> --replace` makes a
+gateway key to paste with the endpoint. Run the same commands again and nothing
+is duplicated: `push` reuses the server with that name, `install` leaves an
+existing entry as it is, and `key --replace` swaps the key with that label.
 
 ## Let your coding agent do it
 
@@ -77,7 +96,13 @@ Runnable scripts in [`examples/`](examples):
 | `push <name> --docs <files or folders>` | Documents your AI can search and read, page by page; the same file name again replaces that document. `--no-wait` returns once the files are sent |
 | `push … --read-only` | Expose only operations that read; writes stay off until you choose them |
 | `push … --ca-file <pem>` / `--no-verify-tls` | A database with a self-signed certificate: check it against your provider's CA, or connect without checking |
+| `login [--no-browser]` | Approve this machine in the console and save a key for it |
+| `whoami` | The workspace, account and key in use |
+| `logout` | Revoke this machine's key and remove it |
 | `skill install [--project]` | Add the setup skill for coding agents |
+| `install <server> --client claude-code\|cursor` | Add a live server to the client's config; `--key`, `--dry-run`, `--global` (Claude Code), `--project` (Cursor) |
+| `uninstall <server> --client claude-code\|cursor` | Remove it, and revoke a key `install` added |
+| `doctor <server> [--call <tool>]` | Check reachability, sign-in, publication, the MCP handshake and tool list; each step passes, fails with a code and a fix, or says it did not run. `--call` makes one call with a tool that reads. Ends with a receipt for support (no secrets) |
 | `servers` | List servers with state and source |
 | `publish <server-id>` | Publish a draft server |
 | `key <server-id> [--label L] [--replace]` | Mint a server-scoped gateway key (shown once); `--replace` revokes the earlier key with that label |
@@ -90,7 +115,7 @@ Runnable scripts in [`examples/`](examples):
 | `logs [--limit 50]` | Tail the audit log |
 | `metrics [--range 24h]` | Workspace KPIs (1h · 24h · 7d · 30d) |
 
-`--json` on `push` and `key` prints one JSON result on stdout (progress goes to
+`--json` on `push`, `key`, `install`, `whoami` and `doctor` prints one JSON result on stdout (progress goes to
 stderr), for scripts and agents. `KAIVA_BRIDGE_URL` overrides the API base
 (defaults to `https://api.kaiv.ai/api/bridge/v1`).
 

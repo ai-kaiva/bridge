@@ -12,10 +12,10 @@ reused, never duplicated, and `--replace` keeps one key per client.
 
 ## Before you start
 
-1. Check `KAIVA_BRIDGE_TOKEN` is set (`test -n "$KAIVA_BRIDGE_TOKEN"`). If not, ask the user
-   to create a **Management key** at https://app.kaiv.ai (Keys & access → Issue a key →
-   Management) and export it in their shell. Never ask them to paste it into the chat, and
-   never print it.
+1. Check the CLI is signed in: `npx @kaiva/bridge whoami`. If it says not signed in, ask
+   the user to run `npx @kaiva/bridge login` in their own terminal and approve the code in
+   the browser (they must be an owner or admin). In CI, `KAIVA_BRIDGE_TOKEN` holds a
+   management key instead. Never ask them to paste a key into the chat, and never print it.
 2. Work out the source with the user:
    - an OpenAPI spec URL (`--openapi <url>`),
    - a database connection string, already in an environment variable such as
@@ -37,6 +37,15 @@ API spec:
 ```bash
 npx -y @kaiva/bridge push petstore --openapi https://example.com/openapi.json --read-only --json
 ```
+
+Documents (PDF, Word, PNG, JPEG, text or Markdown files, or a folder of them):
+
+```bash
+npx -y @kaiva/bridge push handbook --docs ./policies --json
+```
+
+It waits until every file is read; the server goes live with its first ready document.
+Documents give an AI search and page-reading tools only, so `--read-only` does not apply.
 
 Always pass `--read-only`: only operations that read are exposed (every database tool
 is a read; for an API, GET). Operations that change data stay off. If the user wants
@@ -62,32 +71,32 @@ Handle the outcome:
   database name, host, port, the wrong kind of database). Do not retry with changed
   details unless the user gives them.
 
-## 2. Make a key for this client
+## 2. Add it to the client
+
+Claude Code or Cursor: one command writes the client's own config, keeps every other entry,
+and changes nothing when run again.
 
 ```bash
-npx -y @kaiva/bridge key <id> --label claude-code --replace --json
+npx -y @kaiva/bridge install <id> --client claude-code   # this folder's .mcp.json (--global: all projects)
+npx -y @kaiva/bridge install <id> --client cursor        # ~/.cursor/mcp.json (--project: .cursor/mcp.json)
 ```
 
-Use one label per client (`claude-code`, `cursor`, `codex`, `my-app`). `--replace` revokes
-the earlier key with that label for this server, so running setup again leaves one key.
-The key is shown once: put it straight into the client configuration below. Do not echo
-it in your reply or write it anywhere else.
+With no key, the client asks the user to sign in with their Kaiva Bridge account the first
+time (Claude Code: `/mcp`, choose the server, sign in). Add `--key` to write a gateway key for
+this one server instead (not with `--global`); an earlier key from `install` for that client
+is revoked. `--dry-run` shows the change first. Undo: `npx -y @kaiva/bridge uninstall <id>
+--client <client>`.
 
-## 3. Add it to the client
-
-Claude Code:
+Other clients: make a key for the client, then add it by hand.
 
 ```bash
-claude mcp remove <slug> >/dev/null 2>&1 || true
-claude mcp add --transport http <slug> <endpoint> --header "Authorization: Bearer <key>"
+npx -y @kaiva/bridge key <id> --label codex --replace --json
 ```
 
-Cursor (`.cursor/mcp.json` in the project, or `~/.cursor/mcp.json` for all projects): add
-under `mcpServers`, keeping any existing entries:
-
-```json
-{ "mcpServers": { "<slug>": { "url": "<endpoint>", "headers": { "Authorization": "Bearer <key>" } } } }
-```
+Use one label per client (`codex`, `vscode`, `my-app`). `--replace` revokes the earlier key
+with that label for this server, so running setup again leaves one key. The key is shown
+once: put it straight into the client configuration below. Do not echo it in your reply or
+write it anywhere else.
 
 Codex (`~/.codex/config.toml`):
 
@@ -106,7 +115,7 @@ VS Code (`.vscode/mcp.json`):
 A key in a project file must not be committed: check the file is in `.gitignore`, and add
 it if the user agrees.
 
-## 4. Confirm it works
+## 3. Confirm it works
 
 ```bash
 npx -y @kaiva/bridge tools <id>
@@ -120,5 +129,5 @@ call. A new client may need restarting before it lists the tools.
 ## Running it again
 
 Safe. `push` with the same name updates that server from its source and keeps the tools
-someone chose; `key --replace` swaps the key. To expose more tools on a live server, ask
+someone chose; `install` leaves an existing entry as it is; `key --replace` swaps the key. To expose more tools on a live server, ask
 the user first, then use the console (Servers → the server → Tools).
