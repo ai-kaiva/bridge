@@ -430,8 +430,8 @@ async function login(args) {
           process.stderr.write(plain(`warning: the previous key "${previous.label || 'CLI'}" could not be revoked. Revoke it in the console under Keys & access.\n`));
         }
       }
-      const name = poll.data.workspace?.name || poll.data.workspace?.id || 'your workspace';
-      say(`Signed in to ${name}. Key saved to ${CRED_FILE}`);
+      const name = poll.data.workspace?.name || poll.data.workspace?.id || 'Kaiva Bridge';
+      say(`Signed in to the ${name} workspace.`);
       out({ workspace: poll.data.workspace || null, keyLabel: poll.data.keyLabel || null, credentials: CRED_FILE });
       return;
     }
@@ -447,7 +447,7 @@ async function logout() {
   const all = readSaved();
   const entry = Object.prototype.hasOwnProperty.call(all.logins, BASE) ? all.logins[BASE] : null;
   if (!entry) {
-    say(`not signed in on this machine for ${BASE}.`);
+    say('Not signed in to Kaiva Bridge on this machine.');
   } else {
     // Revoke the key first, so it stops working even if it was copied. A key the
     // server already refuses (revoked in the console) is just removed here.
@@ -461,9 +461,10 @@ async function logout() {
     }
     delete all.logins[BASE];
     if (Object.keys(all.logins).length) writeSaved(all); else rmSync(CRED_FILE, { force: true });
-    say(revoked ? 'Signed out. The key is revoked and removed from this machine.' : 'Signed out. The key is removed from this machine.');
+    // When the revoke failed, the warning above already says to revoke it in Keys & access.
+    say(`Signed out of the ${entry.workspace?.name || 'Kaiva Bridge'} workspace.`);
   }
-  if (ENV_TOKEN) say('KAIVA_BRIDGE_TOKEN is still set in this shell; unset it to stop using that key.');
+  if (ENV_TOKEN) say('KAIVA_BRIDGE_TOKEN is still set, so commands in this shell keep using that key.');
 }
 
 /* ── install / uninstall: put a server into an AI client's own config ──────
@@ -480,12 +481,14 @@ async function logout() {
 const CLIENTS = {
   'claude-code': {
     label: 'Claude Code',
+    where: (o) => (o.global ? 'all projects' : "this folder's .mcp.json"),
     file: (o) => (o.global ? null : join(process.cwd(), '.mcp.json')),
     entry: (url, key) => ({ type: 'http', url, ...(key ? { headers: { Authorization: `Bearer ${key}` } } : {}) }),
     signIn: (name) => `In Claude Code, run /mcp, choose ${name} and sign in with your Kaiva Bridge account.`,
   },
   cursor: {
     label: 'Cursor',
+    where: (o) => (o.project ? "this folder's .cursor/mcp.json" : '~/.cursor/mcp.json'),
     file: (o) => (o.project ? join(process.cwd(), '.cursor', 'mcp.json') : join(homedir(), '.cursor', 'mcp.json')),
     entry: (url, key) => ({ url, ...(key ? { headers: { Authorization: `Bearer ${key}` } } : {}) }),
     signIn: (name) => `In Cursor, open Settings, then MCP, and click Connect next to ${name} to sign in with your Kaiva Bridge account.`,
@@ -494,6 +497,8 @@ const CLIENTS = {
 /* One key per installation: the client, this machine and the config file it was
    written into. A shared label let one machine's uninstall or re-install revoke
    another machine's key for the same server. */
+// A name in an example command when it is safe to type as is, otherwise the id.
+const serverRef = (server) => (/^[A-Za-z0-9._-]+$/.test(String(server.name || '')) ? server.name : server.id);
 const installKeyLabel = (client, file) => {
   const where = createHash('sha256').update(`${hostname()}\0${file || 'global'}`).digest('hex').slice(0, 10);
   return `${client} · ${String(hostname()).slice(0, 40)} · ${where} (kaiva-bridge install)`;
@@ -605,7 +610,7 @@ async function install(args, { remove = false } = {}) {
     const present = probe.status === 0;
     const pointsHere = present && String(probe.stdout).includes(url);
     if (remove) {
-      if (!present) { say(`${name} is not in Claude Code's user settings. Nothing to remove.`); return; }
+      if (!present) { say(`${name} is not installed in Claude Code. Nothing to remove.`); return; }
       if (!pointsHere) fail(`${name} in Claude Code points somewhere else, so it was left as it is.`);
       if (dry) { say(`would run: claude mcp remove ${name} --scope user`); return; }
       const r = claude(['mcp', 'remove', name, '--scope', 'user']);
@@ -613,7 +618,7 @@ async function install(args, { remove = false } = {}) {
       say(`Removed ${name} from Claude Code (all projects).`);
       return;
     }
-    if (present && pointsHere) { say(`${name} is already in Claude Code (all projects). Nothing changed.`); return; }
+    if (present && pointsHere) { say(`${name} is already installed in Claude Code. Nothing changed.`); return; }
     if (present) fail(`Claude Code already has a server called ${name} that points somewhere else. Choose another name with --name.`);
     const json = JSON.stringify(c.entry(url, null));
     if (dry) { say(`would run: claude mcp add-json --scope user ${name} '${json}'`); return; }
@@ -621,7 +626,7 @@ async function install(args, { remove = false } = {}) {
     if (r.status !== 0) fail(`claude mcp add-json failed: ${(r.stderr || r.stdout || '').trim()}`);
     say(`Added ${name} to Claude Code (all projects).`);
     say(c.signIn(name));
-    say(`Undo: kaiva-bridge uninstall ${server.id} --client ${client} --global`);
+    say(`Undo: kaiva-bridge uninstall ${serverRef(server)} --client ${client} --global`);
     out({ client, name, url, scope: 'user', key: false });
     return;
   }
@@ -635,19 +640,19 @@ async function install(args, { remove = false } = {}) {
 
   if (remove) {
     const target = flag(args, 'name') ? (own(name) ? name : null) : existing;
-    if (!target) { say(`${server.name} is not in ${file}. Nothing to remove.`); return; }
+    if (!target) { say(`${server.name} is not installed in ${c.label}. Nothing to remove.`); return; }
     if (urlOf(servers[target]) !== url) fail(`${target} in ${file} points somewhere else, so it was left as it is.`);
     if (dry) { say(`would remove ${target} from ${file}`); return; }
     delete servers[target];
     writeClientConfig(file, cfg.data, cfg);
     await revokeInstallKeys(server.id, client, file);
-    say(`Removed ${target} from ${file}. The previous file is saved as ${file}.kaiva-bridge.bak`);
+    say(`Removed ${target} from ${c.label}.`);
     out({ client, name: target, file, removed: true });
     return;
   }
 
   if (existing) {
-    say(`${server.name} is already in ${file} as ${existing}. Nothing changed.`);
+    say(`${existing} is already installed in ${c.label}. Nothing changed.`);
     out({ client, name: existing, file, url, changed: false });
     return;
   }
@@ -659,13 +664,13 @@ async function install(args, { remove = false } = {}) {
     say(`other entries kept: ${Object.keys(servers).length}`);
     return;
   }
-  const key = useKey ? await mintInstallKey(server.id, client, file) : null;
+  const key = useKey ? await mintInstallKey(server.id, client, file, server.name) : null;
   servers[name] = c.entry(url, key);
   writeClientConfig(file, cfg.data, { ...cfg, secret: !!key });
-  say(`Added ${name} to ${file} (${c.label}).${cfg.existed ? ` The previous file is saved as ${file}.kaiva-bridge.bak` : ''}`);
-  if (key && (client === 'claude-code' || opts.project)) say(`This file now holds a gateway key for ${server.name}. Keep it out of version control.`);
+  say(`Added ${name} to ${c.label} (${c.where(opts)}).`);
+  if (key && (client === 'claude-code' || opts.project)) say(`This file now holds a key for ${server.name}. Keep it out of git.`);
   if (!key) say(c.signIn(name));
-  say(`Undo: kaiva-bridge uninstall ${server.id} --client ${client}${opts.project ? ' --project' : ''}`);
+  say(`Undo: kaiva-bridge uninstall ${serverRef(server)} --client ${client}${opts.project ? ' --project' : ''}`);
   out({ client, name, file, url, changed: true, key: !!key });
 }
 
@@ -682,10 +687,10 @@ async function revokeInstallKeys(serverId, client, file) {
       n += 1;
     }
   }
-  if (n) say(`revoked ${n} earlier key${n === 1 ? '' : 's'} for ${client}`);
+  return n;
 }
-async function mintInstallKey(serverId, client, file) {
-  await revokeInstallKeys(serverId, client, file);
+async function mintInstallKey(serverId, client, file, serverName) {
+  if (await revokeInstallKeys(serverId, client, file)) say(`Replaced the earlier ${CLIENTS[client].label} key for ${serverName}.`);
   const r = await api('POST', '/keys', { label: installKeyLabel(client, file), serverIds: [serverId] });
   const k = r?.key?.key;
   // Only a gateway key ever goes into a client's config.
@@ -789,8 +794,7 @@ async function doctor(args) {
         say(`${mark[x.status]}  ${x.step.padEnd(12)} ${x.detail}`);
         if (x.fix) say(`      ${''.padEnd(12)} fix: ${x.fix}`);
       }
-      say(`receipt ${receipt.id}  ${receipt.at}  ${receipt.api}${receipt.server ? `  ${receipt.server}` : ''}`);
-      say(`        ${receipt.steps}`);
+      say(`Support receipt: ${receipt.id} · ${receipt.api} · ${receipt.steps}`);
     }
     if (failed) process.exitCode = 1;
   };
@@ -978,13 +982,11 @@ async function main() {
   if (cmd === 'logout') return logout();
   if (cmd === 'whoami') {
     const r = await api('GET', '/whoami');
-    const via = ENV_TOKEN ? 'KAIVA_BRIDGE_TOKEN (environment)' : `saved login (${CRED_FILE})`;
     if (JSON_MODE) { out({ workspace: r.workspace, email: r.user?.email || null, key: r.key, via: ENV_TOKEN ? 'env' : 'login', api: BASE }); return; }
     say(`workspace  ${r.workspace?.name || r.workspace?.id}`);
     if (r.user?.email) say(`account    ${r.user.email}`);
     say(`key        ${r.key?.label || ''}${r.key?.prefix ? `  (${r.key.prefix}…)` : ''}`);
-    say(`from       ${via}`);
-    say(`api        ${BASE}`);
+    if (BASE !== 'https://api.kaiv.ai/api/bridge/v1') say(`api        ${BASE}`);
     return;
   }
 
