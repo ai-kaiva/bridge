@@ -8,6 +8,19 @@ your agents can call. This CLI drives it over the
 [Management API](https://kaiv.ai/bridge/docs). Every setup command is safe to
 run again.
 
+## For your coding agent
+
+Connect your AI agent to APIs, databases and documents with Kaiva Bridge. Install the
+skill so your coding agent can set up hosted MCP connections for you. Try public APIs
+without an account.
+
+Works with Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot and other compatible
+coding agents.
+
+```bash
+npx skills add ai-kaiva/bridge
+```
+
 ## Install
 
 Nothing to install. Node 18+ has everything:
@@ -45,14 +58,6 @@ claude plugin install kaiva-bridge@kaiva
 
 Or copy just the skill: `npx @kaiva/bridge skill install`.
 
-## Other coding agents
-
-Install the Kaiva Bridge skill in Codex, Cursor, Gemini CLI, GitHub Copilot, Windsurf and
-other coding agents:
-
-```bash
-npx skills add ai-kaiva/bridge
-```
 
 ## Auth
 
