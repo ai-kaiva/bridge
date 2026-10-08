@@ -1,0 +1,12 @@
+{
+  "name": "kaiva",
+  "description": "Kaiva plugins for Claude Code",
+  "owner": { "name": "Kaiva", "email": "support@kaiv.ai" },
+  "plugins": [
+    {
+      "name": "kaiva-bridge",
+      "source": "./",
+      "description": "Give Claude Code real access to an API, a database, documents or a remote MCP server through Kaiva Bridge. Public API specs work with no account."
+    }
+  ]
+}

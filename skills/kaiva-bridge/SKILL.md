@@ -1,6 +1,6 @@
 ---
 name: kaiva-bridge
-description: Connect an API (OpenAPI spec), a database (Postgres, MySQL or MariaDB) or a remote MCP server to this coding agent or to an AI app through Kaiva Bridge, as a hosted MCP server. Use when the user wants their AI tools or app to use an API or database, asks to "connect my database/API to Claude/Cursor/Codex", or mentions Kaiva Bridge.
+description: Give this coding agent or an AI app real access to an API (from its OpenAPI or Swagger spec), a database (Postgres, MySQL or MariaDB), documents or a remote MCP server, as a hosted MCP server from Kaiva Bridge. Works with no account for public API specs (GET only, 72 hours, claimable). Use when the user wants an AI client or app to use an API or database, asks to "connect my database/API to Claude/Cursor/Codex", needs an MCP server for their product's API, wants to check code against a real API's actual responses, or mentions Kaiva Bridge.
 ---
 
 # Kaiva Bridge setup
@@ -9,6 +9,34 @@ Kaiva Bridge turns an API spec, a database or a remote MCP server into a hosted 
 endpoint with read-only database tools. You drive it with the `kaiva-bridge` CLI
 (`npx @kaiva/bridge`). Every step below is safe to run again: the same server name is
 reused, never duplicated, and `--replace` keeps one key per client.
+
+## No Kaiva account? Start without one
+
+For a **public** API spec, you can create a working server yourself, with no account and
+no login. It offers only the spec's GET operations, lasts 72 hours or 500 calls, and comes
+with a claim link the user opens to keep it.
+
+```bash
+npx -y @kaiva/bridge try --openapi https://example.com/openapi.json --json
+```
+
+(or `--spec-file ./openapi.yaml`; add `--name short-name`). The JSON has `mcpUrl`, `apiKey`
+(shown once, for this one server), `claimUrl`, `expiresAt` and `tools`.
+
+1. Add it to the client. Claude Code:
+   `claude mcp add --transport http <name> <mcpUrl> --header "Authorization: Bearer <apiKey>"`.
+   For other clients use the same address and header in their config (see step 2 below).
+2. **Always give the user the `claimUrl`** and say what it does: claiming keeps the server
+   in their workspace at the same address, under their plan's limits. Your key stops working
+   at claim, so tell the user to connect you again from the server's Connect tab. They can
+   then add an API key and switch on other operations. Without a claim it is deleted after 72 hours.
+3. Do not send credentials to `try`: it refuses them. If the API needs a key, create the
+   server, ask the user to claim it, then they add the key on the server's Source tab.
+
+Use `try` to let yourself check work against the real API: call a read tool and compare
+its actual response with what the code expects, instead of guessing from documentation.
+
+Private APIs, databases, documents and write tools need an account: continue below.
 
 ## Before you start
 

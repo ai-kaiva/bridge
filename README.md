@@ -16,6 +16,31 @@ Nothing to install. Node 18+ has everything:
 npx @kaiva/bridge help
 ```
 
+## Try it with no account
+
+For a public API spec, one command gives you a working MCP server. No account,
+no login:
+
+```bash
+npx @kaiva/bridge try --openapi https://petstore3.swagger.io/api/v3/openapi.json
+```
+
+You get the server's address, a key for that one server, and a claim link. The server
+offers only the spec's GET operations, and lasts 72 hours or 500 calls. Open the claim
+link to keep it in your workspace: it keeps its address and your plan's limits apply.
+The key stops working at claim, so connect your AI client again from the console. Then
+you can add an API key and switch on other operations. Coding agents can do this
+themselves (`--json` prints one JSON object).
+
+## Claude Code plugin
+
+```bash
+claude plugin marketplace add ai-kaiva/bridge
+claude plugin install kaiva-bridge@kaiva
+```
+
+Or copy just the skill: `npx @kaiva/bridge skill install`.
+
 ## Auth
 
 ```bash

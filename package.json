@@ -1,7 +1,7 @@
 {
   "name": "@kaiva/bridge",
-  "version": "0.1.10",
-  "description": "Kaiva Bridge CLI \u2014 publish any API as a live MCP server from your terminal.",
+  "version": "0.1.11",
+  "description": "Kaiva Bridge CLI — publish any API as a live MCP server from your terminal.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -35,6 +35,7 @@
     "skills",
     "examples",
     "LICENSE",
-    "README.md"
+    "README.md",
+    ".claude-plugin"
   ]
 }

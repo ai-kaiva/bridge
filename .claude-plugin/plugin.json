@@ -1,0 +1,10 @@
+{
+  "name": "kaiva-bridge",
+  "version": "0.1.11",
+  "description": "Give Claude Code real access to an API, a database, documents or a remote MCP server through Kaiva Bridge hosted MCP servers. Public API specs work with no account (GET only, 72 hours, claimable).",
+  "author": { "name": "Kaiva", "url": "https://kaiv.ai" },
+  "homepage": "https://kaiv.ai/bridge",
+  "repository": "https://github.com/ai-kaiva/bridge",
+  "license": "MIT",
+  "keywords": ["mcp", "openapi", "api", "database", "postgres", "mysql", "kaiva"]
+}

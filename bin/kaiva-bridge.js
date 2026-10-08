@@ -69,6 +69,8 @@ const HELP = `kaiva-bridge — publish any API as a live, governed MCP server
 USAGE
   kaiva-bridge push <name> --openapi <spec-url>      create + introspect + expose all + publish (same name again: reused, not duplicated)
       add --read-only to expose only operations that read (writes stay off until you choose them)
+  kaiva-bridge try --openapi <public-spec-url>       no account needed: a server with the spec's GET operations for 72 hours, a key, and a claim link
+      or --spec-file <path>; add --name <name>. Claim the link to keep it; the key stops working then
   kaiva-bridge push <name> --mcp <server-url>        wrap an existing remote MCP server
   kaiva-bridge push <name> --postgres <conn-string>  read-only tools from a Postgres DB
   kaiva-bridge push <name> --mysql <conn-string>     read-only tools from a MySQL or MariaDB DB
@@ -940,11 +942,49 @@ async function doctor(args) {
   return finish();
 }
 
+/* kaiva-bridge try: a server offering the GET operations of a PUBLIC spec, with no account and no login.
+   The answer is a server for 72 hours (500 calls), a key for that one server, and a claim
+   link for the person; claiming keeps it. No credential is ever sent with this. */
+async function tryServer(args) {
+  const val = (n) => { const v = flag(args, n); return v && !v.startsWith('--') ? v : undefined; };
+  const specUrl = val('openapi');
+  const file = val('spec-file');
+  if (!specUrl === !file) fail('usage: kaiva-bridge try --openapi <public-spec-url> | --spec-file <path> [--name <name>] [--json]');
+  let spec;
+  if (file) {
+    const { readFileSync } = await import('node:fs');
+    try { spec = readFileSync(file, 'utf8'); } catch { fail(`cannot read ${file}`); }
+  }
+  const name = val('name');
+  let res;
+  try {
+    res = await fetch(`${ROOT}/api/bridge/claimable`, {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(90000),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...(specUrl ? { specUrl } : { spec }), ...(name ? { name } : {}) }),
+    });
+  } catch (e) { fail(`could not reach ${ROOT}: ${e.message}`); }
+  let body = null;
+  try { body = await res.json(); } catch { /* not JSON */ }
+  if (!res.ok) fail(body && body.message ? body.message : `the server answered ${res.status}`);
+  if (JSON_MODE) { out(body); return; }
+  const n = (body.tools || []).length;
+  say(`server   ${body.name}  (GET only, ${n} tool${n === 1 ? '' : 's'})`);
+  say(`address  ${body.mcpUrl}`);
+  say(`key      ${body.apiKey}   shown once; works for this server until it is claimed`);
+  say(`claim    ${body.claimUrl}`);
+  say(`expires  ${new Date(body.expiresAt).toLocaleString()}, or after ${body.limits?.calls || 500} calls, unless claimed`);
+  say('');
+  say('add it to Claude Code:');
+  say(`  claude mcp add --transport http ${body.name} ${body.mcpUrl} --header "Authorization: Bearer ${body.apiKey}"`);
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') { say(HELP); return; }
 
   if (cmd === 'push') return push(args);
+  if (cmd === 'try') return tryServer(args);
 
   /* The setup skill for coding agents ships inside this package. Installing it
      copies SKILL.md into Claude Code's skills folder (the user's, or this project's
