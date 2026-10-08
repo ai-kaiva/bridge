@@ -32,6 +32,10 @@ The key stops working at claim, so connect your AI client again from the console
 you can add an API key and switch on other operations. Coding agents can do this
 themselves (`--json` prints one JSON object).
 
+In a cloud agent sandbox (Codex cloud, Claude Code on the web), allow the domains
+`api.kaiv.ai` and `registry.npmjs.org` first: their network access is off or limited by
+default.
+
 ## Claude Code plugin
 
 ```bash
@@ -40,6 +44,15 @@ claude plugin install kaiva-bridge@kaiva
 ```
 
 Or copy just the skill: `npx @kaiva/bridge skill install`.
+
+## Other coding agents
+
+Install the Kaiva Bridge skill in Codex, Cursor, Gemini CLI, GitHub Copilot, Windsurf and
+other coding agents:
+
+```bash
+npx skills add ai-kaiva/bridge
+```
 
 ## Auth
 

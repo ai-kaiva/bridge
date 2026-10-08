@@ -1,0 +1,16 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "Kaiva Bridge",
+  "description": "Turn an API (OpenAPI or Swagger spec), a Postgres or MySQL database, documents or a remote MCP server into a hosted MCP server for Claude, ChatGPT, Cursor, Codex and other AI clients. Public API specs work with no account: one command gives a live MCP server and a claim link.",
+  "folders": ["skills", "examples"],
+  "excludeFolders": ["bin", "node_modules"],
+  "excludeFiles": [],
+  "rules": [
+    "To create a live MCP server from a public OpenAPI or Swagger spec with no account, run: npx @kaiva/bridge try --openapi <spec-url> (add --json for machine-readable output).",
+    "Without the CLI, send POST https://api.kaiv.ai/api/bridge/claimable with JSON {\"specUrl\": \"<spec-url>\"} or {\"spec\": \"<spec text>\"}. The answer has mcpUrl, apiKey (shown once, sent as Authorization: Bearer <apiKey>), claimUrl, expiresAt and tools.",
+    "A server created without an account offers only the spec's GET operations, accepts no credentials, and lasts 72 hours or 500 tool calls. Never send credentials to it; they are refused.",
+    "Always give the user the claimUrl. Claiming keeps the server in their Kaiva Bridge workspace at the same address, under their plan; the apiKey stops working then, and they connect their AI client again from the server's Connect tab.",
+    "For private APIs, databases, documents or tools that change data, sign in first: npx @kaiva/bridge login, then npx @kaiva/bridge push <name> --openapi <spec-url> (or --postgres, --mysql, --docs, --mcp).",
+    "In a cloud agent sandbox such as Codex cloud or Claude Code on the web, allow the domains api.kaiv.ai and registry.npmjs.org before running these commands."
+  ]
+}

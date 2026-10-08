@@ -23,6 +23,9 @@ npx -y @kaiva/bridge try --openapi https://example.com/openapi.json --json
 (or `--spec-file ./openapi.yaml`; add `--name short-name`). The JSON has `mcpUrl`, `apiKey`
 (shown once, for this one server), `claimUrl`, `expiresAt` and `tools`.
 
+If the command cannot reach the network (a cloud sandbox such as Codex cloud or Claude Code
+on the web), ask the user to allow the domains `api.kaiv.ai` and `registry.npmjs.org`.
+
 1. Add it to the client. Claude Code:
    `claude mcp add --transport http <name> <mcpUrl> --header "Authorization: Bearer <apiKey>"`.
    For other clients use the same address and header in their config (see step 2 below).
