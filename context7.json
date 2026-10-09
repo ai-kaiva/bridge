@@ -1,9 +1,17 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
+  "url": "https://context7.com/ai-kaiva/bridge",
+  "public_key": "pk_bYxBAF18EtLPMqFrtCRfO",
   "projectTitle": "Kaiva Bridge",
   "description": "Turn an API (OpenAPI or Swagger spec), a Postgres or MySQL database, documents or a remote MCP server into a hosted MCP server for Claude, ChatGPT, Cursor, Codex and other AI clients. Public API specs work with no account: one command gives a live MCP server and a claim link.",
-  "folders": ["skills", "examples"],
-  "excludeFolders": ["bin", "node_modules"],
+  "folders": [
+    "skills",
+    "examples"
+  ],
+  "excludeFolders": [
+    "bin",
+    "node_modules"
+  ],
   "excludeFiles": [],
   "rules": [
     "To create a live MCP server from a public OpenAPI or Swagger spec with no account, run: npx @kaiva/bridge try --openapi <spec-url> (add --json for machine-readable output).",
