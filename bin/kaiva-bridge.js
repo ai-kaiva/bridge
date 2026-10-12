@@ -288,7 +288,14 @@ async function pushDocs(name, args) {
     if (st.isDirectory()) {
       for (const f of readdirSync(g).sort()) {
         const fp = path.join(g, f);
-        if (DOC_EXT.has(path.extname(f).toLowerCase()) && statSync(fp).isFile()) files.push(fp);
+        if (!DOC_EXT.has(path.extname(f).toLowerCase())) continue;
+        /* Only real files inside a folder. A link planted in a cloned repository
+           (notes.md -> a private file elsewhere on the machine) would otherwise be read
+           and sent up as a document (BR-088). A file named on the command line is
+           followed, because the person chose it. */
+        const entry = lstatSync(fp);
+        if (entry.isSymbolicLink()) { say(`  skipped ${fp}: a link, not a file`); continue; }
+        if (entry.isFile()) files.push(fp);
       }
     } else files.push(g);
   }
