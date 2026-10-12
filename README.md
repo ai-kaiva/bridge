@@ -3,7 +3,7 @@
 Publish any API or database as a live MCP server, from your terminal.
 
 [Kaiva Bridge](https://kaiv.ai/bridge) turns an OpenAPI spec, a database
-(PostgreSQL, MySQL or MariaDB) or a remote MCP server into a hosted MCP server
+(PostgreSQL, MySQL, MariaDB or SQL Server) or a remote MCP server into a hosted MCP server
 your agents can call. This CLI drives it over the
 [Management API](https://kaiv.ai/bridge/docs). Every setup command is safe to
 run again.
@@ -136,6 +136,8 @@ Runnable scripts in [`examples/`](examples):
 | `push <name> --mcp <url>` | Wrap an existing remote MCP server with governance |
 | `push <name> --postgres <conn>` | Read-only tools from a Postgres database |
 | `push <name> --mysql <conn>` | Read-only tools from a MySQL or MariaDB database |
+| `push <name> --graphql <endpoint>` | Read tools from a GraphQL API's queries (mutations are not offered) |
+| `push <name> --sqlserver <conn>` | Read-only tools from a SQL Server or Azure SQL database (`sqlserver://…` or `Server=…;Database=…;User ID=…;Password=…`) |
 | `push <name> --docs <files or folders>` | Documents your AI can search and read, page by page; the same file name again replaces that document. `--no-wait` returns once the files are sent |
 | `push … --read-only` | Expose only operations that read; writes stay off until you choose them |
 | `push … --ca-file <pem>` / `--no-verify-tls` | A database with a self-signed certificate: check it against your provider's CA, or connect without checking |

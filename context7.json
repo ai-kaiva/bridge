@@ -3,7 +3,7 @@
   "url": "https://context7.com/ai-kaiva/bridge",
   "public_key": "pk_bYxBAF18EtLPMqFrtCRfO",
   "projectTitle": "Kaiva Bridge",
-  "description": "Turn an API (OpenAPI or Swagger spec), a Postgres or MySQL database, documents or a remote MCP server into a hosted MCP server for Claude, ChatGPT, Cursor, Codex and other AI clients. Public API specs work with no account: one command gives a live MCP server and a claim link.",
+  "description": "Turn an API (OpenAPI, Swagger or GraphQL), a Postgres, MySQL or SQL Server database, documents or a remote MCP server into a hosted MCP server for Claude, ChatGPT, Cursor, Codex and other AI clients. Public API specs work with no account: one command gives a live MCP server and a claim link.",
   "folders": [
     "skills",
     "examples"

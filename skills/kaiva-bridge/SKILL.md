@@ -1,6 +1,6 @@
 ---
 name: kaiva-bridge
-description: Give this coding agent or an AI app real access to an API (from its OpenAPI or Swagger spec), a database (Postgres, MySQL or MariaDB), documents or a remote MCP server, as a hosted MCP server from Kaiva Bridge. Works with no account for public API specs (GET only, 72 hours, claimable). Use when the user wants an AI client or app to use an API or database, asks to "connect my database/API to Claude/Cursor/Codex", needs an MCP server for their product's API, wants to check code against a real API's actual responses, or mentions Kaiva Bridge.
+description: Give this coding agent or an AI app real access to an API (from its OpenAPI or Swagger spec), a database (Postgres, MySQL, MariaDB or SQL Server), documents or a remote MCP server, as a hosted MCP server from Kaiva Bridge. Works with no account for public API specs (GET only, 72 hours, claimable). Use when the user wants an AI client or app to use an API or database, asks to "connect my database/API to Claude/Cursor/Codex", needs an MCP server for their product's API, wants to check code against a real API's actual responses, or mentions Kaiva Bridge.
 ---
 
 # Kaiva Bridge setup
@@ -51,7 +51,8 @@ Private APIs, databases, documents and write tools need an account: continue bel
    - an OpenAPI spec URL (`--openapi <url>`),
    - a database connection string, already in an environment variable such as
      `DATABASE_URL` (`--postgres` for postgres:// and postgresql://, `--mysql` for mysql://
-     and mariadb://),
+     and mariadb://, `--sqlserver` for sqlserver://, mssql:// or a `Server=…;Database=…`
+     string),
    - or a remote MCP server URL (`--mcp <url>`).
 3. Pick a short server name (lowercase, hyphens), e.g. `shop-db`.
 

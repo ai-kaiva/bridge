@@ -72,8 +72,10 @@ USAGE
   kaiva-bridge try --openapi <public-spec-url>       no account needed: a server with the spec's GET operations for 72 hours, a key, and a claim link
       or --spec-file <path>; add --name <name>. Claim the link to keep it; the key stops working then
   kaiva-bridge push <name> --mcp <server-url>        wrap an existing remote MCP server
+  kaiva-bridge push <name> --graphql <endpoint>      read tools from a GraphQL API's queries
   kaiva-bridge push <name> --postgres <conn-string>  read-only tools from a Postgres DB
   kaiva-bridge push <name> --mysql <conn-string>     read-only tools from a MySQL or MariaDB DB
+  kaiva-bridge push <name> --sqlserver <conn-string> read-only tools from a SQL Server or Azure SQL DB
   kaiva-bridge push <name> --docs <file|folder>...   PDF, Word, PNG, JPEG, text or Markdown files, searchable by your AI
       waits until each file is read and the server is live; add --no-wait to return once they are sent
       the same file name again replaces that document with the new version
@@ -177,14 +179,14 @@ const redactConn = (conn) => String(conn).replace(/\/\/([^:/@]+):[^@]*@/, '//$1:
 
 async function push(args) {
   const name = args[0];
-  if (!name || name.startsWith('--')) fail('usage: kaiva-bridge push <name> --openapi <url> | --mcp <url> | --postgres <conn> | --docs <files>');
+  if (!name || name.startsWith('--')) fail('usage: kaiva-bridge push <name> --openapi <url> | --graphql <url> | --mcp <url> | --postgres <conn> | --mysql <conn> | --sqlserver <conn> | --docs <files>');
   if (args.includes('--docs')) return pushDocs(name, args);
   // A flag's value, unless the next word is another flag (--postgres --secret-stdin).
   const val = (n) => { const v = flag(args, n); return v && !v.startsWith('--') ? v : undefined; };
-  const sourceType = ['openapi', 'mcp', 'postgres', 'mysql'].find((t) => args.includes(`--${t}`));
-  if (!sourceType) fail('one of --openapi <url>, --mcp <url>, --postgres <conn-string>, --mysql <conn-string> is required');
-  // A database source's connection string is its credential (Postgres or MySQL).
-  const isDb = sourceType === 'postgres' || sourceType === 'mysql';
+  const sourceType = ['openapi', 'graphql', 'mcp', 'postgres', 'mysql', 'sqlserver'].find((t) => args.includes(`--${t}`));
+  if (!sourceType) fail('one of --openapi <url>, --graphql <url>, --mcp <url>, --postgres <conn-string>, --mysql <conn-string>, --sqlserver <conn-string> is required');
+  // A database source's connection string is its credential (Postgres, MySQL or SQL Server).
+  const isDb = sourceType === 'postgres' || sourceType === 'mysql' || sourceType === 'sqlserver';
   let rawUrl = val(sourceType);
   let token = val('token');
   /* The connection string carries the database password and --token is an API
@@ -204,7 +206,9 @@ async function push(args) {
   // A connection string carries the password. It travels ONLY inside `auth`
   // (sealed at rest server-side); source_url gets a redacted form, since that
   // column is echoed back by list/detail endpoints and shown in the console.
-  const sourceUrl = isDb ? redactConn(rawUrl) : rawUrl;
+  /* A SQL Server string may be its key=value form ("…;Password=…"), which redactConn cannot see into, so none is sent:
+     the server builds the display address itself from the sealed string. */
+  const sourceUrl = sourceType === 'sqlserver' ? undefined : isDb ? redactConn(rawUrl) : rawUrl;
 
   /* Repeat-safe: a server with this name is reused, never duplicated, so a coding
      agent (or a person) can run the same push again. It is read again from its
@@ -212,7 +216,7 @@ async function push(args) {
      chosen them. A name already used for a different kind of source stops here. */
   const existing = ((await api('GET', '/servers')).servers || []).find((s) => s.name === name);
   if (existing && existing.source_type !== sourceType) {
-    const kind = { openapi: 'an OpenAPI spec', postgres: 'a Postgres database', mysql: 'a MySQL or MariaDB database', mcp: 'a remote MCP server' }[existing.source_type] || 'another kind of source';
+    const kind = { openapi: 'an OpenAPI spec', postgres: 'a Postgres database', mysql: 'a MySQL or MariaDB database', sqlserver: 'a SQL Server database', graphql: 'a GraphQL API', mcp: 'a remote MCP server' }[existing.source_type] || 'another kind of source';
     fail(`a server named "${name}" already exists for ${kind}. Use another name, or delete that server first.`);
   }
   let server = existing;
@@ -249,7 +253,7 @@ async function push(args) {
      every database tool is a read). Writes stay off until someone chooses them, which
      is what a coding agent should do by default. Without the flag, all are exposed as
      before. */
-  const READS = new Set(['GET', 'HEAD', 'SELECT']);
+  const READS = new Set(['GET', 'HEAD', 'SELECT', 'QUERY']);
   const toExpose = args.includes('--read-only') ? tools.filter((t) => READS.has(String(t.method || '').toUpperCase())) : tools;
   const leftOff = tools.length - toExpose.length;
   if (neverLive) {
@@ -928,7 +932,7 @@ async function doctor(args) {
      same name, so a current definition that writes is refused here, before anything
      is sent, and the server enforces the same with readOnly (on the definition it
      executes, bound to the published one). */
-  if (!['GET', 'HEAD', 'OPTIONS', 'SELECT'].includes(String(mt.method || '').toUpperCase())) {
+  if (!['GET', 'HEAD', 'OPTIONS', 'SELECT', 'QUERY'].includes(String(mt.method || '').toUpperCase())) {
     add('call', 'skipped', 'tool_may_write', `${callName} reads in the published definition, but its current definition (${String(mt.method || 'unknown').toUpperCase()}) may change data, so doctor does not call it`, `publish or reject the held change first: kaiva-bridge revisions ${server.id}`);
     return finish();
   }
