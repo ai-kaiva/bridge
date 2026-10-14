@@ -1,5 +1,5 @@
-# NVIDIA NeMo Agent Toolkit agent using a Kaiva Bridge MCP server as its tools, with Nemotron as the model.
-# Run: nat run --config_file config.yml --input "Which version of express is the latest, and what is its licence?"
+# NVIDIA NeMo Agent Toolkit agent using tools from an MCP server hosted on Kaiva Bridge, with Nemotron as the model.
+# Run: nat run --config_file config.yml --input "What is the licence of the npm package left-pad?"
 # Needs NVIDIA_API_KEY (from build.nvidia.com) in the environment.
 
 function_groups:

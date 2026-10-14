@@ -1,4 +1,4 @@
-// Call your Kaiva Bridge MCP server from your own app. Node 18+, no dependencies.
+// Call your MCP server on Kaiva Bridge from your own app. Node 18+, no dependencies.
 //
 //   export KAIVA_MCP_URL=https://api.kaiv.ai/api/bridge/mcp/<your-server>
 //   export KAIVA_MCP_KEY=kv_live_...          # npx @kaiva/bridge key <server-id> --label my-app --replace
