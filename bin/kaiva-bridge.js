@@ -64,7 +64,7 @@ const TOKEN = ENV_TOKEN || (savedLogin ? savedLogin.token : '');
   }
 })();
 
-const HELP = `kaiva-bridge — publish any API as a live, governed MCP server
+const HELP = `kaiva-bridge — turn an API, database or documents into a live MCP server
 
 USAGE
   kaiva-bridge push <name> --openapi <spec-url>      create + introspect + expose all + publish (same name again: reused, not duplicated)
@@ -76,6 +76,10 @@ USAGE
   kaiva-bridge push <name> --postgres <conn-string>  read-only tools from a Postgres DB
   kaiva-bridge push <name> --mysql <conn-string>     read-only tools from a MySQL or MariaDB DB
   kaiva-bridge push <name> --sqlserver <conn-string> read-only tools from a SQL Server or Azure SQL DB
+  kaiva-bridge push <name> --db [--db-env NAME]      the database in $DATABASE_URL (or NAME), from the environment or .env;
+      Postgres, MySQL, MariaDB or SQL Server, told apart by the address; it never appears on the command line
+      every push and try ends with a setup check: one real call, writes switched on, the tool list's size and
+      tables that look private; --no-check skips it
   kaiva-bridge push <name> --docs <file|folder>...   PDF, Word, PNG, JPEG, text or Markdown files, searchable by your AI
       waits until each file is read and the server is live; add --no-wait to return once they are sent
       the same file name again replaces that document with the new version
@@ -177,17 +181,120 @@ const gatewayUrl = (slug) => `${ROOT}/api/bridge/mcp/${slug}`;
 // postgres://user:secret@host:5432/db → postgres://user:***@host:5432/db
 const redactConn = (conn) => String(conn).replace(/\/\/([^:/@]+):[^@]*@/, '//$1:***@');
 
+/* --db: the project's database, from $DATABASE_URL (or --db-env NAME) in the environment, else in .env.local
+   or .env in this folder. The address carries the password, so it is never put on the command line or printed. */
+function envFileValue(file, name) {
+  let text;
+  try { text = readFileSync(file, 'utf8'); } catch { return undefined; }
+  for (const raw of text.split('\n')) {
+    let line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    if (line.startsWith('export ')) line = line.slice(7).trim();
+    const eq = line.indexOf('=');
+    if (eq <= 0 || line.slice(0, eq).trim() !== name) continue;
+    let v = line.slice(eq + 1).trim();
+    const q = v[0];
+    if (q === '"' || q === "'") {
+      // Quoted: up to the closing quote; anything after it (a comment) is not part of the value.
+      const end = v.indexOf(q, 1);
+      v = end > 0 ? v.slice(1, end) : v.slice(1);
+    } else {
+      const hash = v.indexOf(' #');
+      if (hash >= 0) v = v.slice(0, hash).trim();
+    }
+    return v;
+  }
+  return undefined;
+}
+function databaseFromEnv(name) {
+  if (process.env[name]) return { value: process.env[name], where: `$${name}` };
+  for (const f of ['.env.local', '.env']) {
+    const v = envFileValue(join(process.cwd(), f), name);
+    if (v) return { value: v, where: `${name} in ${f}` };
+  }
+  return null;
+}
+// Which engine an address is for. Only the scheme or the key names are read; the value is never echoed.
+function databaseKind(conn) {
+  const c = String(conn || '').trim();
+  const lower = c.slice(0, 16).toLowerCase();
+  if (lower.startsWith('postgres://') || lower.startsWith('postgresql://')) return 'postgres';
+  if (lower.startsWith('mysql://') || lower.startsWith('mariadb://')) return 'mysql';
+  if (lower.startsWith('sqlserver://') || lower.startsWith('mssql://')) return 'sqlserver';
+  if (!c.includes('://') && c.includes('=')) {
+    const keys = c.split(';').map((part) => part.slice(0, Math.max(0, part.indexOf('='))).trim().toLowerCase());
+    if (keys.some((k) => ['server', 'data source', 'address', 'addr', 'network address'].includes(k))) return 'sqlserver';
+  }
+  return null;
+}
+
+/* The setup check every push and try ends with: does a real call work, is anything that writes switched on, is the
+   tool list small enough for an AI to read, and can a tool read data that looks private. It informs; it never
+   changes the server. */
+const READ_METHODS = new Set(['GET', 'HEAD', 'SELECT', 'QUERY']);
+const PRIVATE_PARTS = new Set(['password', 'passwd', 'pwd', 'secret', 'secrets', 'token', 'tokens', 'apikey', 'credential',
+  'credentials', 'ssn', 'session', 'sessions', 'otp', 'totp', 'mfa', 'salt', 'privatekey', 'refresh']);
+function looksPrivate(identifier) {
+  const parts = String(identifier).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  for (let i = 0; i < parts.length; i += 1) {
+    if (PRIVATE_PARTS.has(parts[i])) return true;
+    if (i + 1 < parts.length && PRIVATE_PARTS.has(parts[i] + parts[i + 1])) return true; // api_key, private_key
+  }
+  return false;
+}
+function setupFindings(tools) {
+  const on = tools.filter((t) => t.exposed !== false);
+  const writes = on.filter((t) => !READ_METHODS.has(String(t.method || '').toUpperCase())).map((t) => t.name);
+  const chars = on.reduce((n, t) => n + String(t.name || '').length + String(t.description || '').length
+    + JSON.stringify(t.input_schema || t.inputSchema || {}).length, 0);
+  const privateLooking = [];
+  for (const t of on) {
+    const columns = (t.input_schema || t.inputSchema || {}).properties?.columns?.items?.enum;
+    const cols = Array.isArray(columns) ? columns.filter((c) => typeof c === 'string' && looksPrivate(c)) : [];
+    if (cols.length || looksPrivate(t.name || '')) privateLooking.push({ tool: t.name, columns: cols.slice(0, 5) });
+  }
+  return { toolCount: on.length, approxTokens: Math.ceil(chars / 4), writesOn: writes, privateLooking };
+}
+// The tool a first call uses: one that reads and needs no input, preferring a get or list.
+function firstCallTool(tools) {
+  const ok = tools.filter((t) => t.exposed !== false && READ_METHODS.has(String(t.method || '').toUpperCase())
+    && !((t.input_schema || t.inputSchema || {}).required || []).length);
+  return ok.find((t) => /^(get|list)_/.test(t.name)) || ok[0] || null;
+}
+function sayFindings(f, where) {
+  if (f.writesOn.length) say(`check  ${f.writesOn.length} tool${f.writesOn.length === 1 ? '' : 's'} that change data are switched on: ${f.writesOn.slice(0, 5).join(', ')}${f.writesOn.length > 5 ? ', …' : ''}`);
+  else say('check  nothing that changes data is switched on');
+  const big = f.toolCount > 40 || f.approxTokens > 10000;
+  say(`check  ${f.toolCount} tool${f.toolCount === 1 ? '' : 's'}, about ${f.approxTokens.toLocaleString('en-GB')} tokens for the AI to read${big ? ` (large: switch off what the task does not need${where ? ` in ${where}` : ''})` : ''}`);
+  if (f.privateLooking.length) {
+    say(`check  ${f.privateLooking.length} tool${f.privateLooking.length === 1 ? '' : 's'} can read data that looks private: ${f.privateLooking.slice(0, 5).map((p) => p.columns.length ? `${p.tool} (${p.columns.join(', ')})` : p.tool).join('; ')}`);
+    say(`       if your AI should not see it, switch ${f.privateLooking.length === 1 ? 'it' : 'them'} off${where ? ` in ${where}` : ''}`);
+  }
+}
+
 async function push(args) {
   const name = args[0];
   if (!name || name.startsWith('--')) fail('usage: kaiva-bridge push <name> --openapi <url> | --graphql <url> | --mcp <url> | --postgres <conn> | --mysql <conn> | --sqlserver <conn> | --docs <files>');
   if (args.includes('--docs')) return pushDocs(name, args);
   // A flag's value, unless the next word is another flag (--postgres --secret-stdin).
   const val = (n) => { const v = flag(args, n); return v && !v.startsWith('--') ? v : undefined; };
-  const sourceType = ['openapi', 'graphql', 'mcp', 'postgres', 'mysql', 'sqlserver'].find((t) => args.includes(`--${t}`));
-  if (!sourceType) fail('one of --openapi <url>, --graphql <url>, --mcp <url>, --postgres <conn-string>, --mysql <conn-string>, --sqlserver <conn-string> is required');
+  let sourceType = ['openapi', 'graphql', 'mcp', 'postgres', 'mysql', 'sqlserver'].find((t) => args.includes(`--${t}`));
+  let fromEnv = null;
+  if (args.includes('--db')) {
+    if (sourceType) fail(`use --db or --${sourceType}, not both`);
+    if (args.includes('--secret-stdin')) fail('--db reads the address from the environment or .env; --secret-stdin is not needed');
+    const varName = val('db-env') || 'DATABASE_URL';
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(varName)) fail('--db-env takes the name of an environment variable');
+    fromEnv = databaseFromEnv(varName);
+    if (!fromEnv) fail(`${varName} is not set here, and not in .env.local or .env in this folder. Set it, or use --postgres, --mysql or --sqlserver with --secret-stdin`);
+    sourceType = databaseKind(fromEnv.value);
+    if (!sourceType) fail(`${fromEnv.where} is not a Postgres, MySQL, MariaDB or SQL Server address (postgres://, mysql://, mariadb://, sqlserver:// or Server=…;Database=…)`);
+    say(`using ${fromEnv.where}: a ${{ postgres: 'Postgres', mysql: 'MySQL or MariaDB', sqlserver: 'SQL Server' }[sourceType]} database`);
+  }
+  if (!sourceType) fail('one of --openapi <url>, --graphql <url>, --mcp <url>, --postgres <conn-string>, --mysql <conn-string>, --sqlserver <conn-string> or --db is required');
   // A database source's connection string is its credential (Postgres, MySQL or SQL Server).
   const isDb = sourceType === 'postgres' || sourceType === 'mysql' || sourceType === 'sqlserver';
-  let rawUrl = val(sourceType);
+  let rawUrl = fromEnv ? fromEnv.value : val(sourceType);
   let token = val('token');
   /* The connection string carries the database password and --token is an API
      credential, so both can come from stdin instead of argv (the same
@@ -197,7 +304,7 @@ async function push(args) {
     if (isDb ? rawUrl : token) fail(`pass the ${isDb ? 'connection string' : 'token'} on stdin or as an argument, not both`);
     const secret = await readSecretStdin();
     if (isDb) rawUrl = secret; else token = secret;
-  } else if (isDb ? rawUrl : token) {
+  } else if (!fromEnv && (isDb ? rawUrl : token)) {
     process.stderr.write(plain(`warning: ${isDb ? `--${sourceType}` : '--token'} leaves the secret in shell history and visible to other processes. Use --secret-stdin instead.\n`));
   }
   if (!rawUrl) fail(`--${sourceType} needs a ${isDb ? 'connection string (or --secret-stdin)' : 'URL'}`);
@@ -269,8 +376,31 @@ async function push(args) {
     say(`held: ${held.join(', ')} changed meaning and is NOT being served yet. release with: kaiva-bridge promote ${server.id}`);
     process.exitCode = 3;
   }
+  /* The setup check: the tools as they are now served, one real call with a tool that reads and needs no input, and
+     what the AI is given. The call goes through the console's test path (readOnly), so it never counts as a client's. */
+  let check;
+  if (!args.includes('--no-check')) {
+    const now = await api('GET', `/servers/${server.id}`);
+    const served = (now.server?.tools || now.tools || []).filter((t) => t.exposed);
+    const findings = setupFindings(served);
+    const pick = firstCallTool(served);
+    let firstCall;
+    if (!pick) firstCall = { status: 'not_run', reason: 'no tool that reads and needs no input; try one with kaiva-bridge invoke' };
+    else {
+      const r = await tryApi('POST', `/servers/${server.id}/tools/${pick.id}/invoke`, { arguments: {}, readOnly: true });
+      firstCall = r.ok && r.data?.ok
+        ? { status: 'passed', tool: pick.name, ms: r.data.latencyMs, ...(r.data.simulated ? { simulated: true } : {}) }
+        : { status: 'failed', tool: pick.name, reason: plain(String(r.data?.title || r.data?.message || r.data?.error || r.status || r.network || 'no answer')).slice(0, 300), fix: `kaiva-bridge doctor ${server.id} --call ${pick.name}` };
+    }
+    say('');
+    if (firstCall.status === 'passed') say(`check  first call: ${firstCall.tool} answered in ${firstCall.ms}ms${firstCall.simulated ? ' (test mode: a recorded answer)' : ''}`);
+    else if (firstCall.status === 'failed') say(`check  first call: ${firstCall.tool} failed: ${firstCall.reason}\n       fix: ${firstCall.fix}`);
+    else say(`check  first call: not run (${firstCall.reason})`);
+    sayFindings(findings, `the console: Servers, ${name}, Tools`);
+    check = { firstCall, ...findings };
+  }
   say(`\nnext: kaiva-bridge key ${server.id} --label <client> --replace   (a gateway key for your agent)`);
-  out({ id: server.id, name, slug: server.slug, endpoint, sourceType, reused: !!existing, tools: tools.length, exposed, writesLeftOff: neverLive ? leftOff : 0, held });
+  out({ id: server.id, name, slug: server.slug, endpoint, sourceType, reused: !!existing, tools: tools.length, exposed, writesLeftOff: neverLive ? leftOff : 0, held, ...(check ? { check } : {}) });
 }
 
 /* Documents: a documents server, then each file sent one at a time (as the console
@@ -978,6 +1108,34 @@ async function tryServer(args) {
   let body = null;
   try { body = await res.json(); } catch { /* not JSON */ }
   if (!res.ok) fail(body && body.message ? body.message : `the server answered ${res.status}`);
+  /* The setup check, as the agent's own client will meet the server: the handshake, the tools it is given and one real
+     call with a tool that needs no input (it counts as one of the server's calls). */
+  if (!args.includes('--no-check') && body.mcpUrl && body.apiKey) {
+    let firstCall;
+    let listed = [];
+    try {
+      const init = await mcpCall(body.mcpUrl, body.apiKey, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'kaiva-bridge-check', version: '1' } } });
+      const v = init.body?.result?.protocolVersion;
+      if (!v) throw new Error(`no MCP answer (HTTP ${init.status})`);
+      await mcpCall(body.mcpUrl, body.apiKey, { jsonrpc: '2.0', method: 'notifications/initialized' }, v);
+      const tl = await mcpCall(body.mcpUrl, body.apiKey, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, v);
+      listed = Array.isArray(tl.body?.result?.tools) ? tl.body.result.tools : [];
+      const pick = listed.find((t) => !(t.inputSchema?.required || []).length && /^(get|list)_/.test(t.name)) || listed.find((t) => !(t.inputSchema?.required || []).length);
+      if (!pick) firstCall = { status: 'not_run', reason: 'every tool needs an input; call one from your AI client' };
+      else {
+        const started = Date.now();
+        const call = await mcpCall(body.mcpUrl, body.apiKey, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: pick.name, arguments: {} } }, v);
+        const result = call.body?.result;
+        firstCall = result && !result.isError
+          ? { status: 'passed', tool: pick.name, ms: Date.now() - started }
+          : { status: 'failed', tool: pick.name, reason: plain(String((result?.content || []).map((c) => c.text || '').join(' ') || call.body?.error?.message || `HTTP ${call.status}`)).slice(0, 300) };
+      }
+    } catch (e) {
+      firstCall = { status: 'failed', reason: plain(String(e.message)).slice(0, 300) };
+    }
+    const findings = setupFindings(listed.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, method: 'GET' })));
+    body.check = { firstCall, ...findings };
+  }
   if (JSON_MODE) { out(body); return; }
   const n = (body.tools || []).length;
   say(`server   ${body.name}  (GET only, ${n} tool${n === 1 ? '' : 's'})`);
@@ -988,6 +1146,14 @@ async function tryServer(args) {
   say('');
   say('add it to Claude Code:');
   say(`  claude mcp add --transport http ${body.name} ${body.mcpUrl} --header "Authorization: Bearer ${body.apiKey}"`);
+  if (body.check) {
+    const fc = body.check.firstCall;
+    say('');
+    if (fc.status === 'passed') say(`check  first call: ${fc.tool} answered in ${fc.ms}ms`);
+    else if (fc.status === 'failed') say(`check  first call${fc.tool ? `: ${fc.tool}` : ''} failed: ${fc.reason}`);
+    else say(`check  first call: not run (${fc.reason})`);
+    sayFindings(body.check, '');
+  }
 }
 
 async function main() {

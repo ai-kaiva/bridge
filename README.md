@@ -90,9 +90,10 @@ by the Management API: the two credential types are never interchangeable.
 # An API spec (only operations that read are exposed with --read-only)
 npx @kaiva/bridge push my-api --openapi https://api.example.com/openapi.json --read-only
 
-# A database: the connection string comes from stdin, not the command line
-printf %s "$DATABASE_URL" | npx @kaiva/bridge push shop-db --mysql --secret-stdin --read-only
+# A database: DATABASE_URL from the environment or .env; Postgres, MySQL, MariaDB or SQL Server
+npx @kaiva/bridge push shop-db --db --read-only
 # → LIVE  https://api.kaiv.ai/api/bridge/mcp/shop-db-a1b2c3d4
+# → check  first call: get_orders answered in 84ms (and what the AI is given)
 
 # Documents: PDF, Word, PNG, JPEG, text or Markdown files, or a folder of them
 npx @kaiva/bridge push handbook --docs ./policies
@@ -133,13 +134,15 @@ Runnable scripts in [`examples/`](examples):
 | Command | What it does |
 |---|---|
 | `push <name> --openapi <url>` | Create + introspect + expose + publish from an OpenAPI spec |
-| `push <name> --mcp <url>` | Wrap an existing remote MCP server with governance |
+| `push <name> --mcp <url>` | Wrap an existing remote MCP server, choosing which of its tools to offer |
 | `push <name> --postgres <conn>` | Read-only tools from a Postgres database |
 | `push <name> --mysql <conn>` | Read-only tools from a MySQL or MariaDB database |
 | `push <name> --graphql <endpoint>` | Read tools from a GraphQL API's queries (mutations are not offered) |
 | `push <name> --sqlserver <conn>` | Read-only tools from a SQL Server or Azure SQL database (`sqlserver://…` or `Server=…;Database=…;User ID=…;Password=…`) |
 | `push <name> --docs <files or folders>` | Documents your AI can search and read, page by page; the same file name again replaces that document. `--no-wait` returns once the files are sent |
+| `push <name> --db [--db-env NAME]` | The database in `DATABASE_URL` (or NAME), from the environment or `.env.local`/`.env`; the engine is told apart by the address, which never appears on the command line |
 | `push … --read-only` | Expose only operations that read; writes stay off until you choose them |
+| `push … --no-check` | Skip the setup check every `push` and `try` ends with: one real call, writes switched on, the tool list's size and tables that look private |
 | `push … --ca-file <pem>` / `--no-verify-tls` | A database with a self-signed certificate: check it against your provider's CA, or connect without checking |
 | `login [--no-browser]` | Approve this machine in the console and save a key for it |
 | `whoami` | The workspace, account and key in use |

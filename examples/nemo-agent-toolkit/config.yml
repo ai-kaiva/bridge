@@ -1,0 +1,27 @@
+# NVIDIA NeMo Agent Toolkit agent using a Kaiva Bridge MCP server as its tools, with Nemotron as the model.
+# Run: nat run --config_file config.yml --input "Which version of express is the latest, and what is its licence?"
+# Needs NVIDIA_API_KEY (from build.nvidia.com) in the environment.
+
+function_groups:
+  # Kaiva Bridge's public demo server: package metadata from npm, PyPI and others. It needs no key.
+  # For your own API or database, create a server (npx @kaiva/bridge try --openapi <spec> needs no account)
+  # and put its address here.
+  bridge:
+    _type: mcp_client
+    server:
+      transport: streamable-http
+      url: "https://api.kaiv.ai/api/bridge/mcp/dependency-trust-f1aaf06d"
+
+llms:
+  nemotron:
+    _type: nim
+    model_name: nvidia/nemotron-3-super-120b-a12b
+    temperature: 0.0
+    max_tokens: 4096
+
+workflow:
+  _type: tool_calling_agent
+  tool_names:
+    - bridge
+  llm_name: nemotron
+  verbose: true
