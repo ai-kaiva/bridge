@@ -1,5 +1,35 @@
 # @kaiva/bridge
 
+Kaiva Bridge turns your API, database or documents into a hosted MCP server that
+Claude, ChatGPT, Cursor, VS Code and other AI clients can use. This page covers the
+Kaiva Bridge connector, `ai.kaiv/bridge`, first; the command-line tool follows.
+
+## Kaiva Bridge as an MCP connector (`ai.kaiv/bridge`)
+
+Kaiva Bridge is also an MCP server itself, so your AI client can create and manage
+hosted MCP servers from inside a chat. It is listed in the official MCP Registry as
+`ai.kaiv/bridge` and in Claude's connector directory.
+
+- Address: `https://api.kaiv.ai/api/bridge/manage/mcp` (Streamable HTTP)
+- Sign-in: OAuth 2.1 with your Kaiva Bridge account (free, no card). No key to copy.
+- Tools: `list_my_servers`, `get_server`, `create_server` (drafts a server from an
+  OpenAPI spec URL) and `reintrospect_server` (refreshes a server's tools when the API
+  changes).
+
+The connector drafts and lists. Publishing a server and switching its tools on happen
+in the console, by you.
+
+**VS Code and GitHub Copilot:** click Add to VS Code on [kaiv.ai/bridge](https://kaiv.ai/bridge),
+or run *MCP: Add Server* in VS Code with the address above, then sign in when asked.
+**Claude:** [claude.ai/directory/kaiva-bridge](https://claude.ai/directory/kaiva-bridge).
+**Claude Code:** `claude mcp add --transport http --scope user kaiva-bridge https://api.kaiv.ai/api/bridge/manage/mcp`.
+**Cursor and ChatGPT:** the Add menu on kaiv.ai/bridge.
+
+Then ask: "List my Kaiva Bridge servers" or "Create a Kaiva Bridge server from
+https://petstore3.swagger.io/api/v3/openapi.json".
+
+## The command-line tool
+
 Publish any API or database as a live MCP server, from your terminal.
 
 [Kaiva Bridge](https://kaiv.ai/bridge) turns an OpenAPI spec, a database
@@ -57,30 +87,6 @@ claude plugin install kaiva-bridge@kaiva
 ```
 
 Or copy just the skill: `npx @kaiva/bridge skill install`.
-
-## Kaiva Bridge as an MCP connector (`ai.kaiv/bridge`)
-
-Kaiva Bridge is also an MCP server itself, so your AI client can create and manage
-hosted MCP servers from inside a chat. It is listed in the official MCP Registry as
-`ai.kaiv/bridge` and in Claude's connector directory.
-
-- Address: `https://api.kaiv.ai/api/bridge/manage/mcp` (Streamable HTTP)
-- Sign-in: OAuth 2.1 with your Kaiva Bridge account (free, no card). No key to copy.
-- Tools: `list_my_servers`, `get_server`, `create_server` (drafts a server from an
-  OpenAPI spec URL) and `reintrospect_server` (refreshes a server's tools when the API
-  changes).
-
-The connector drafts and lists. Publishing a server and switching its tools on happen
-in the console, by you.
-
-**VS Code and GitHub Copilot:** click Add to VS Code on [kaiv.ai/bridge](https://kaiv.ai/bridge),
-or run *MCP: Add Server* in VS Code with the address above, then sign in when asked.
-**Claude:** [claude.ai/directory/kaiva-bridge](https://claude.ai/directory/kaiva-bridge).
-**Claude Code:** `claude mcp add --transport http --scope user kaiva-bridge https://api.kaiv.ai/api/bridge/manage/mcp`.
-**Cursor and ChatGPT:** the Add menu on kaiv.ai/bridge.
-
-Then ask: "List my Kaiva Bridge servers" or "Create a Kaiva Bridge server from
-https://petstore3.swagger.io/api/v3/openapi.json".
 
 ## Auth
 
