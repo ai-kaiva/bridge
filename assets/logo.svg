@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" aria-label="Kaiva">
+  <rect width="100" height="100" rx="22" fill="#0B0D10"/>
+  <g transform="translate(3.55 4.6)">
+    <g fill="#EDF1F7">
+      <rect x="58" y="44.5" width="18" height="11" rx="5.5" transform="rotate(40 58 50)"/>
+      <rect x="58" y="44.5" width="24" height="11" rx="5.5" transform="rotate(90 50 50) rotate(40 58 50)"/>
+      <rect x="58" y="44.5" width="30" height="11" rx="5.5" transform="rotate(180 50 50) rotate(40 58 50)"/>
+    </g>
+    <g fill="#81B4EE"><rect x="58" y="44.5" width="36" height="11" rx="5.5" transform="rotate(270 50 50) rotate(40 58 50)"/></g>
+  </g>
+</svg>

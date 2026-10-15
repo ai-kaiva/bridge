@@ -16,6 +16,14 @@ const trimSlashes = (s) => { let i = s.length; while (i > 0 && s[i - 1] === '/')
 const BASE = trimSlashes(process.env.KAIVA_BRIDGE_URL || 'https://api.kaiv.ai/api/bridge/v1');
 const ROOT = BASE.replace(/\/api\/bridge\/v1$/, '');
 
+/* Every request to Bridge names this CLI and its version, as npm and git name themselves, so Bridge can tell CLI use
+   apart from other scripts and count it by version. Only what any HTTP client already says: the tool, its version, the
+   Node version and the operating system. No machine id, no account, nothing about what is being run. Every fetch in
+   this file goes to Bridge (BASE or ROOT, or a gateway address Bridge returned), so every one goes through here. */
+const CLI_VERSION = (() => { try { return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version || '0'; } catch { return '0'; } })();
+const USER_AGENT = `kaiva-bridge-cli/${CLI_VERSION} (node ${process.versions.node}; ${process.platform})`;
+const bridgeFetch = (url, init = {}) => fetch(url, { ...init, headers: { 'User-Agent': USER_AGENT, ...(init.headers || {}) } });
+
 /* A login is saved per API address, in a file only this user can read
    (directory 0700, file 0600, like ~/.ssh). A key saved for one address is never
    sent to another: point KAIVA_BRIDGE_URL somewhere else and it is simply not
@@ -158,7 +166,7 @@ async function readSecretStdin() {
 
 async function api(method, path, body) {
   if (!TOKEN) fail('not signed in. Run: kaiva-bridge login   (CI: set KAIVA_BRIDGE_TOKEN to a management key)');
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await bridgeFetch(`${BASE}${path}`, {
     redirect: 'error', // the key is for this address only: a redirect is refused, never followed
     method,
     headers: { Authorization: `Bearer ${TOKEN}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -451,7 +459,7 @@ async function pushDocs(name, args) {
     for (let attempt = 0; ; attempt += 1) {
       const form = new FormData();
       form.append('file', new Blob([readFileSync(f)]), base);
-      const res = await fetch(`${BASE}/documents/servers/${server.id}/documents`, { redirect: 'error', method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` }, body: form });
+      const res = await bridgeFetch(`${BASE}/documents/servers/${server.id}/documents`, { redirect: 'error', method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` }, body: form });
       let data = null;
       try { data = await res.json(); } catch { /* empty */ }
       // Sent too fast: the console waits and tries again, and so does this.
@@ -530,7 +538,7 @@ function openBrowser(url) {
 }
 
 async function cliAuth(path, body) {
-  const res = await fetch(`${ROOT}/api/bridge/cli-auth/${path}`, {
+  const res = await bridgeFetch(`${ROOT}/api/bridge/cli-auth/${path}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   let data = null;
@@ -567,7 +575,7 @@ async function login(args) {
          key the server already refuses needs nothing more. */
       if (previous && typeof previous.token === 'string' && previous.token !== poll.data.key) {
         try {
-          const res = await fetch(`${BASE}/session`, { redirect: 'error', method: 'DELETE', headers: { Authorization: `Bearer ${previous.token}` } });
+          const res = await bridgeFetch(`${BASE}/session`, { redirect: 'error', method: 'DELETE', headers: { Authorization: `Bearer ${previous.token}` } });
           if (!res.ok && res.status !== 401) process.stderr.write(plain(`warning: the previous key "${previous.label || 'CLI'}" could not be revoked (${res.status}). Revoke it in the console under Keys & access.\n`));
         } catch {
           process.stderr.write(plain(`warning: the previous key "${previous.label || 'CLI'}" could not be revoked. Revoke it in the console under Keys & access.\n`));
@@ -596,7 +604,7 @@ async function logout() {
     // server already refuses (revoked in the console) is just removed here.
     let revoked = false;
     try {
-      const res = await fetch(`${BASE}/session`, { redirect: 'error', method: 'DELETE', headers: { Authorization: `Bearer ${entry.token}` } });
+      const res = await bridgeFetch(`${BASE}/session`, { redirect: 'error', method: 'DELETE', headers: { Authorization: `Bearer ${entry.token}` } });
       revoked = res.ok;
       if (!res.ok && res.status !== 401) process.stderr.write(plain(`warning: the key could not be revoked (${res.status}). Revoke "${entry.label || 'CLI'}" in the console under Keys & access.\n`));
     } catch {
@@ -850,7 +858,7 @@ async function mintInstallKey(serverId, client, file, serverName) {
    the key piped in with --key-stdin. */
 async function tryApi(method, path, body) {
   try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await bridgeFetch(`${BASE}${path}`, {
       redirect: 'error', // the key is for this address only: a redirect is refused, never followed
       method,
       headers: { Authorization: `Bearer ${TOKEN}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -866,7 +874,7 @@ async function tryApi(method, path, body) {
 
 // One JSON-RPC message to the gateway, answered as JSON or as an event stream.
 async function mcpCall(url, key, msg, version) {
-  const res = await fetch(url, {
+  const res = await bridgeFetch(url, {
     redirect: 'error', // the key is for this address only: a redirect is refused, never followed
     method: 'POST',
     headers: {
@@ -944,7 +952,7 @@ async function doctor(args) {
 
   // 1. reachability: is Kaiva there at all?
   try {
-    const h = await fetch(`${ROOT}/health`);
+    const h = await bridgeFetch(`${ROOT}/health`);
     if (!h.ok) throw new Error(`HTTP ${h.status}`);
     add('reachability', 'passed', 'ok', `Kaiva answered at ${new URL(BASE).host}`);
   } catch (e) {
@@ -1099,7 +1107,7 @@ async function tryServer(args) {
   const name = val('name');
   let res;
   try {
-    res = await fetch(`${ROOT}/api/bridge/claimable`, {
+    res = await bridgeFetch(`${ROOT}/api/bridge/claimable`, {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(90000),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...(specUrl ? { specUrl } : { spec }), ...(name ? { name } : {}) }),
