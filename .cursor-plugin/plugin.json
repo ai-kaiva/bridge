@@ -1,7 +1,7 @@
 {
   "name": "kaiva-bridge",
   "displayName": "Kaiva Bridge",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "description": "Connect an API, a database or documents to Cursor as a live MCP server with one command, on Kaiva Bridge, a managed MCP cloud platform. Free to start; public API specs work with no account.",
   "author": { "name": "Kaiva", "email": "support@kaiv.ai" },
   "homepage": "https://kaiv.ai/bridge",

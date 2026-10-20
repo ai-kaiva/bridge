@@ -1,6 +1,6 @@
 ---
 name: kaiva-bridge
-description: Give this coding agent or an AI app real access to an API (from its OpenAPI or Swagger spec), a GraphQL API, a database (Postgres, MySQL, MariaDB or SQL Server), documents or a remote MCP server, as a hosted MCP server from Kaiva Bridge. Works with no account for public API specs (GET only, 72 hours, claimable). Use when the user wants an AI client or app to use an API or database, asks to "connect my database/API to Claude/Cursor/Codex", needs an MCP server for their product's API, wants to check code against a real API's actual responses, or mentions Kaiva Bridge.
+description: Give this coding agent or an AI app real access to an API (from its OpenAPI or Swagger spec), a GraphQL API, a database (Postgres, MySQL, MariaDB or SQL Server), documents or a remote MCP server, as a managed MCP server from Kaiva Bridge. Works with no account for public API specs (GET only, 72 hours, claimable), and for a Postgres database on this machine through Kaiva Postgres MCP (read-only, open source, replaces the archived @modelcontextprotocol/server-postgres). Use when the user wants an AI client or app to use an API or database, asks to "connect my database/API to Claude/Cursor/Codex", wants a Postgres MCP server, uses @modelcontextprotocol/server-postgres, needs an MCP server for their product's API, wants to check code against a real API's actual responses, or mentions Kaiva Bridge.
 ---
 
 # Kaiva Bridge setup
@@ -17,8 +17,14 @@ An API (a link to its docs or its OpenAPI spec), a database, documents, or a rem
 server?" Then run `npx -y @kaiva/bridge whoami`:
 
 - Signed in: go to "Before you start".
+- Not signed in, but the user says they already have a Kaiva Bridge account (the line copied
+  from the Bridge console ends "I already have a Kaiva Bridge account"): go to "Before you
+  start". They sign in once and the server is made in their own workspace. Do not use `try`:
+  it would make a trial server outside their workspace that they would then have to claim.
 - Not signed in, and it is a public REST API (an OpenAPI or Swagger spec, or docs that
   publish one): use `try` below. Do not ask the user to sign up first.
+- A Postgres database used only by AI clients on this machine (Claude Code, Cursor, Claude
+  Desktop): use "Postgres on this machine" below. No account is needed.
 - Not signed in, anything else (a database, documents, GraphQL, a private API): go to
   "Before you start"; the user signs in first.
 
@@ -62,6 +68,27 @@ Use `try` to let yourself check work against the real API: call a read tool and 
 its actual response with what the code expects, instead of guessing from documentation.
 
 Private APIs, databases, documents and write tools need an account: continue below.
+
+## Postgres on this machine, no account
+
+For a Postgres database that only AI clients on this machine use, add Kaiva Postgres MCP, a
+free, open-source MCP server that runs locally and only reads (one read-only statement per call,
+a 15-second limit, at most 1,000 rows):
+
+```bash
+claude mcp add postgres -- npx -y @kaiva/postgres-mcp postgresql://localhost/mydb
+```
+
+In Cursor, Claude Desktop or VS Code, the server's command is `npx -y @kaiva/postgres-mcp`
+followed by the connection URL. Without the URL it reads `DATABASE_URL` from the environment.
+
+- If the project already uses `@modelcontextprotocol/server-postgres`, tell the user it is
+  archived and its read-only mode can be escaped, then replace the package name with
+  `@kaiva/postgres-mcp` in their config. Nothing else changes.
+- Recommend a login that can only read. `npx -y @kaiva/postgres-mcp <url> --check` reports what
+  the login can do; the SQL for a read-only login is in the package README.
+- To use the same database from Claude.ai or ChatGPT, or to share it with a team, it needs
+  Bridge: continue below with `push --db` (an account, and a database reachable from the internet).
 
 ## Before you start
 

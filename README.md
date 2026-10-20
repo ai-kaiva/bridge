@@ -88,6 +88,22 @@ claude plugin install kaiva-bridge@kaiva
 
 Or copy just the skill: `npx @kaiva/bridge skill install`.
 
+## Postgres on your machine, no account
+
+For a Postgres database that only the AI clients on your machine use, [Kaiva Postgres
+MCP](https://github.com/ai-kaiva/postgres-mcp) is a free, open-source MCP server that runs
+locally and only reads. It replaces the archived `@modelcontextprotocol/server-postgres`:
+change the package name and nothing else changes.
+
+```bash
+claude mcp add postgres -- npx -y @kaiva/postgres-mcp postgresql://localhost/mydb
+# or, from the same plugin marketplace as above (reads DATABASE_URL from your environment)
+claude plugin install postgres-mcp@kaiva
+```
+
+When you need the same database in Claude.ai or ChatGPT, or for your team, `push --db` below
+serves it from Bridge.
+
 ## Auth
 
 ```bash

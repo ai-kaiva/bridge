@@ -1,12 +1,74 @@
 {
   "name": "kaiva",
   "description": "Kaiva plugins for Claude Code",
-  "owner": { "name": "Kaiva", "email": "support@kaiv.ai" },
+  "owner": {
+    "name": "Kaiva",
+    "email": "support@kaiv.ai"
+  },
   "plugins": [
     {
       "name": "kaiva-bridge",
       "source": "./",
-      "description": "Give Claude Code real access to an API, a database, documents or a remote MCP server through Kaiva Bridge. Public API specs work with no account."
+      "description": "Give Claude Code real access to an API, a database, documents or a remote MCP server through Kaiva Bridge. Public API specs work with no account.",
+      "relevance": {
+        "topic": "Kaiva Bridge",
+        "signals": {
+          "cli": [
+            "kaiva-bridge"
+          ],
+          "hosts": [
+            "api.kaiv.ai",
+            "kaiv.ai",
+            "app.kaiv.ai"
+          ],
+          "filesRead": [
+            "**/openapi.{json,yaml,yml}",
+            "**/swagger.{json,yaml,yml}",
+            "**/*.postman_collection.json",
+            "**/schema.graphql"
+          ],
+          "manifestDeps": [
+            {
+              "file": "[/\\\\]package\\.json$",
+              "pattern": "\"(@kaiva/bridge|@kaiva/postgres-mcp|pg|mysql2|mssql|graphql|express|fastify|@nestjs/core|hono)\"\\s*:"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "postgres-mcp",
+      "source": {
+        "source": "github",
+        "repo": "ai-kaiva/postgres-mcp"
+      },
+      "description": "Let Claude Code read a PostgreSQL database safely: one read-only statement per call, nothing written. Set DATABASE_URL in your environment. Drop-in replacement for the archived server-postgres.",
+      "relevance": {
+        "topic": "PostgreSQL",
+        "signals": {
+          "cli": [
+            "psql",
+            "pg_dump",
+            "pg_restore"
+          ],
+          "filesRead": [
+            "**/*.sql",
+            "**/schema.prisma",
+            "**/drizzle.config.*",
+            "**/knexfile.*"
+          ],
+          "manifestDeps": [
+            {
+              "file": "[/\\\\]package\\.json$",
+              "pattern": "\"(pg|postgres|pg-promise|knex|kysely|@prisma/client|prisma|drizzle-orm|sequelize|typeorm|slonik)\"\\s*:"
+            },
+            {
+              "file": "[/\\\\](requirements\\.txt|pyproject\\.toml)$",
+              "pattern": "psycopg|asyncpg|sqlalchemy"
+            }
+          ]
+        }
+      }
     }
   ]
 }
