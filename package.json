@@ -1,7 +1,7 @@
 {
   "name": "@kaiva/bridge",
-  "version": "0.1.22",
-  "description": "Kaiva Bridge CLI — publish any API as a live MCP server from your terminal.",
+  "version": "0.1.23",
+  "description": "Turn an OpenAPI spec, database or documents into a fully managed MCP server. Kaiva Bridge CLI.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -10,14 +10,7 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "ai",
-    "agents",
-    "kaiva",
-    "bridge"
-  ],
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "openapi", "openapi-to-mcp", "swagger", "rest-api", "graphql", "postgres", "mysql", "sql-server", "mcp-gateway", "ai", "agents", "claude", "cursor", "kaiva", "bridge"],
   "homepage": "https://kaiv.ai/bridge",
   "author": "Kaiva (https://kaiv.ai)",
   "bugs": {
