@@ -5,7 +5,7 @@ description: Give this coding agent or an AI app real access to an API (from its
 
 # Kaiva Bridge setup
 
-Kaiva Bridge turns an API, a database, documents or a remote MCP server into a hosted MCP
+Kaiva Bridge turns an API, a database, documents or a remote MCP server into a managed MCP
 endpoint. You drive it with the `kaiva-bridge` CLI
 (`npx @kaiva/bridge`). Every step below is safe to run again: the same server name is
 reused, never duplicated, and `--replace` keeps one key per client.

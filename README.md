@@ -1,13 +1,13 @@
-# @kaiva/bridge
+# Kaiva Bridge
 
-Kaiva Bridge turns your API, database or documents into a hosted MCP server that
+Kaiva Bridge turns your API, database or documents into a managed MCP server that
 Claude, ChatGPT, Cursor, VS Code and other AI clients can use. This page covers the
 Kaiva Bridge connector, `ai.kaiv/bridge`, first; the command-line tool follows.
 
 ## Kaiva Bridge as an MCP connector (`ai.kaiv/bridge`)
 
 Kaiva Bridge is also an MCP server itself, so your AI client can create and manage
-hosted MCP servers from inside a chat. It is listed in the official MCP Registry as
+MCP servers from inside a chat. It is listed in the official MCP Registry as
 `ai.kaiv/bridge` and in Claude's connector directory.
 
 - Address: `https://api.kaiv.ai/api/bridge/manage/mcp` (Streamable HTTP)
@@ -33,7 +33,7 @@ https://petstore3.swagger.io/api/v3/openapi.json".
 Publish any API or database as a live MCP server, from your terminal.
 
 [Kaiva Bridge](https://kaiv.ai/bridge) turns an OpenAPI spec, a database
-(PostgreSQL, MySQL, MariaDB or SQL Server) or a remote MCP server into a hosted MCP server
+(PostgreSQL, MySQL, MariaDB or SQL Server) or a remote MCP server into a managed MCP server
 your agents can call. This CLI drives it over the
 [Management API](https://kaiv.ai/bridge/docs). Every setup command is safe to
 run again.
@@ -41,7 +41,7 @@ run again.
 ## For your coding agent
 
 Connect your AI agent to APIs, databases and documents with Kaiva Bridge. Install the
-skill so your coding agent can set up hosted MCP connections for you. Try public APIs
+skill so your coding agent can set up managed MCP connections for you. Try public APIs
 without an account.
 
 Works with Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot and other compatible
